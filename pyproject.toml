@@ -1,0 +1,17 @@
+[project]
+name = "wowtranslator"
+version = "0.1.0"
+description = "Real-time WoW chat translator with smart overlay"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]

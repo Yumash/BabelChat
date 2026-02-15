@@ -1,0 +1,17 @@
+# Core
+watchdog>=6.0.0
+lingua-language-detector>=2.1.0
+deepl>=1.18.0
+
+# GUI
+PyQt6>=6.8.0
+
+# Build
+pyinstaller>=6.0.0
+
+# Dev
+pytest>=8.0.0
+ruff>=0.9.0
+
+# Utils
+python-dotenv>=1.0.0

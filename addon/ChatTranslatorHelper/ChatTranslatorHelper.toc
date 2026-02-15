@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: ChatTranslatorHelper
+## Notes: Auto-enables chat logging for WoWTranslator companion app
+## Author: WoWTranslator
+## Version: 1.0.0
+## SavedVariables: ChatTranslatorHelperDB
+
+Core.lua
