@@ -13,11 +13,13 @@ from PyQt6.QtWidgets import QApplication
 
 from app.about_dialog import AboutDialog
 from app.config import AppConfig, resolve_chatlog_path
+from app.i18n import tr
 from app.overlay import ChatOverlay
 from app.parser import Channel
 from app.pipeline import PipelineConfig, TranslationPipeline
 from app.settings_dialog import SettingsDialog
 from app.hotkeys import GlobalHotkeyManager
+from app.translator import TranslatorService
 from app.tray import TrayIcon
 
 logging.basicConfig(
@@ -103,6 +105,24 @@ def _build_pipeline_config(config: AppConfig) -> PipelineConfig:
     )
 
 
+def _enabled_filter_names(config: AppConfig) -> set[str]:
+    """Build the set of overlay filter tab names from config channel booleans."""
+    names: set[str] = set()
+    if config.channels_party:
+        names.add("Party")
+    if config.channels_raid:
+        names.add("Raid")
+    if config.channels_guild:
+        names.add("Guild")
+    if config.channels_say:
+        names.add("Say")
+    if config.channels_whisper:
+        names.add("Whisper")
+    if config.channels_instance:
+        names.add("Instance")
+    return names
+
+
 def main() -> int:
     load_dotenv()
 
@@ -112,17 +132,32 @@ def main() -> int:
     # Load config
     config = AppConfig.load()
 
+    # Set UI language from config
+    tr.set_language(config.ui_language)
+
     # First run — setup wizard if no API key
     if not config.deepl_api_key:
         from app.setup_wizard import SetupWizard
 
-        wizard = SetupWizard(config)
-        if wizard.exec() != SetupWizard.DialogCode.Accepted:
-            return 0
-        config = wizard.get_config()
+        while True:
+            wizard = SetupWizard(config)
+            result = wizard.exec()
+            if result == 2:  # Language changed — restart wizard
+                config = wizard.get_config()
+                continue
+            if result != SetupWizard.DialogCode.Accepted:
+                return 0
+            config = wizard.get_config()
+            break
 
     # Create overlay
     overlay = ChatOverlay()
+    overlay.update_channel_filters(_enabled_filter_names(config))
+
+    # Provide translator for the reply panel
+    reply_translator = TranslatorService(api_key=config.deepl_api_key)
+    overlay.set_translator(reply_translator, config.target_language)
+
     overlay.show()
 
     # Create system tray
@@ -138,6 +173,7 @@ def main() -> int:
         dialog = SettingsDialog(config)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             config = dialog.get_config()
+            overlay.update_channel_filters(_enabled_filter_names(config))
 
     tray.settings_requested.connect(open_settings)
     overlay.settings_requested.connect(open_settings)
@@ -151,13 +187,10 @@ def main() -> int:
     # Global hotkeys
     hotkey_mgr = GlobalHotkeyManager()
     hk_toggle_translate = hotkey_mgr.register(config.hotkey_toggle_translate)
-    hk_toggle_interactive = hotkey_mgr.register(config.hotkey_toggle_interactive)
 
     def on_hotkey(hk_id: int) -> None:
         if hk_id == hk_toggle_translate:
             overlay._toggle_translation()
-        elif hk_id == hk_toggle_interactive:
-            overlay.toggle_interactive()
 
     hotkey_mgr.hotkey_pressed.connect(on_hotkey)
     hotkey_mgr.start()
@@ -166,6 +199,20 @@ def main() -> int:
     pipeline_config = _build_pipeline_config(config)
     pipeline_thread = PipelineThread(pipeline_config)
     pipeline_thread.message_ready.connect(overlay.add_message)
+
+    # Load chat history before starting real-time feed
+    from app.parser import parse_line
+    from app.pipeline import TranslatedMessage
+    from app.watcher import ChatLogWatcher
+    _history_watcher = ChatLogWatcher(pipeline_config.chatlog_path, lambda _: None)
+    _history_lines = _history_watcher.read_tail(max_lines=50)
+    history: list[TranslatedMessage] = []
+    for _line in _history_lines:
+        _msg = parse_line(_line)
+        if _msg and _msg.channel in pipeline_config.enabled_channels:
+            history.append(TranslatedMessage(original=_msg, translation=None))
+    overlay.load_history(history)
+
     pipeline_thread.start()
 
     # Graceful shutdown

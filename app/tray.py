@@ -9,6 +9,8 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
+from app.i18n import tr
+
 # Icon path: works both in dev (assets/) and bundled (PyInstaller _MEIPASS)
 _ICON_CANDIDATES = [
     Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon.ico",
@@ -53,27 +55,27 @@ class TrayIcon(QSystemTrayIcon):
 
         self._menu = QMenu()
 
-        self._show_action = QAction("Hide Overlay")
+        self._show_action = QAction(tr("tray.hide_overlay"))
         self._show_action.triggered.connect(self._toggle_overlay)
         self._menu.addAction(self._show_action)
 
-        self._translate_action = QAction("Toggle Translation")
+        self._translate_action = QAction(tr("tray.toggle_translation"))
         self._translate_action.triggered.connect(self.toggle_translation_requested)
         self._menu.addAction(self._translate_action)
 
         self._menu.addSeparator()
 
-        settings_action = QAction("Settings")
+        settings_action = QAction(tr("tray.settings"))
         settings_action.triggered.connect(self.settings_requested)
         self._menu.addAction(settings_action)
 
-        about_action = QAction("About")
+        about_action = QAction(tr("tray.about"))
         about_action.triggered.connect(self.about_requested)
         self._menu.addAction(about_action)
 
         self._menu.addSeparator()
 
-        quit_action = QAction("Quit")
+        quit_action = QAction(tr("tray.quit"))
         quit_action.triggered.connect(self.quit_requested)
         self._menu.addAction(quit_action)
 
@@ -83,11 +85,11 @@ class TrayIcon(QSystemTrayIcon):
     def _toggle_overlay(self) -> None:
         if self._overlay_visible:
             self._overlay_visible = False
-            self._show_action.setText("Show Overlay")
+            self._show_action.setText(tr("tray.show_overlay"))
             self.hide_overlay_requested.emit()
         else:
             self._overlay_visible = True
-            self._show_action.setText("Hide Overlay")
+            self._show_action.setText(tr("tray.hide_overlay"))
             self.show_overlay_requested.emit()
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:

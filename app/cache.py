@@ -46,7 +46,7 @@ class TranslationCache:
         self._ttl = ttl
         self._memory: OrderedDict[CacheKey, tuple[str, float]] = OrderedDict()
         self._db_path = str(db_path)
-        self._conn = sqlite3.connect(self._db_path)
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.executescript(_SCHEMA)
 
     def get(self, text: str, source_lang: str, target_lang: str) -> str | None:

@@ -1,5 +1,5 @@
 -- ChatTranslatorHelper: auto-enable chat logging for WoWTranslator companion app
--- Minimal addon (~60 lines). All translation logic is in the companion app.
+-- Minimal addon. All translation logic is in the companion app.
 
 local ADDON_NAME = "ChatTranslatorHelper"
 local frame = CreateFrame("Frame")
@@ -22,7 +22,6 @@ frame:RegisterEvent("PLAYER_LOGIN")
 
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-        -- Ensure defaults exist
         if ChatTranslatorHelperDB.autoLog == nil then
             ChatTranslatorHelperDB.autoLog = true
         end
@@ -32,11 +31,15 @@ frame:SetScript("OnEvent", function(self, event, arg1)
 
     elseif event == "PLAYER_LOGIN" then
         if ChatTranslatorHelperDB.autoLog then
-            if not IsLoggingChat() then
+            if not LoggingChat() then
                 LoggingChat(true)
-                Print("Chat logging enabled. WoWTranslator companion app can now read your chat.")
+                Print("Chat logging enabled.")
             else
                 Print("Chat logging already active.")
+            end
+            -- Also enable combat logging to increase disk write frequency
+            if not LoggingCombat() then
+                LoggingCombat(true)
             end
         else
             Print("Auto-logging disabled. Use /wct log on to enable.")
@@ -50,7 +53,7 @@ SlashCmdList["WCT"] = function(msg)
     local cmd = strtrim(msg):lower()
 
     if cmd == "" or cmd == "status" then
-        local logging = IsLoggingChat()
+        local logging = LoggingChat()
         Print("Status:")
         Print("  Chat logging: " .. (logging and "|cFF40FF40ON|r" or "|cFFFF4040OFF|r"))
         Print("  Auto-log on login: " .. (ChatTranslatorHelperDB.autoLog and "ON" or "OFF"))

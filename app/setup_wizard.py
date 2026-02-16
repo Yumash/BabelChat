@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from app.about_dialog import _create_logo_pixmap
 from app.config import AppConfig, detect_wow_path
+from app.i18n import UI_LANGUAGES, tr
 from app.settings_dialog import (
     LANGUAGES,
     WOW_THEME_STYLESHEET,
@@ -37,8 +38,6 @@ PAGE_WOW_PATH = 2
 PAGE_LANGUAGE = 3
 PAGE_READY = 4
 TOTAL_PAGES = 5
-
-_STEP_NAMES = ["Welcome", "API Key", "WoW Path", "Language", "Ready"]
 
 # Gold-styled primary action button
 _GOLD_BTN_STYLE = (
@@ -59,7 +58,8 @@ class SetupWizard(QDialog):
     ) -> None:
         super().__init__(parent)
         self._config = config
-        self.setWindowTitle("WoWTranslator Setup")
+        self._key_validated = False
+        self.setWindowTitle(tr("wizard.title"))
         self.setWindowIcon(_create_dialog_icon())
         self.setMinimumSize(550, 480)
         self.setStyleSheet(WOW_THEME_STYLESHEET)
@@ -83,16 +83,16 @@ class SetupWizard(QDialog):
         main_layout.addWidget(self._separator())
         nav = QHBoxLayout()
 
-        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn = QPushButton(tr("wizard.cancel"))
         self._cancel_btn.clicked.connect(self.reject)
         nav.addWidget(self._cancel_btn)
         nav.addStretch()
 
-        self._back_btn = QPushButton("\u2190 Back")
+        self._back_btn = QPushButton(tr("wizard.back"))
         self._back_btn.clicked.connect(self._go_back)
         nav.addWidget(self._back_btn)
 
-        self._next_btn = QPushButton("Next \u2192")
+        self._next_btn = QPushButton(tr("wizard.next"))
         self._next_btn.setStyleSheet(_GOLD_BTN_STYLE)
         self._next_btn.clicked.connect(self._go_next)
         nav.addWidget(self._next_btn)
@@ -146,9 +146,10 @@ class SetupWizard(QDialog):
                     "background: #555; border-radius: 6px;"
                 )
 
-        name = _STEP_NAMES[current]
+        step_names = tr("wizard.steps").split("|")
+        name = step_names[current] if current < len(step_names) else ""
         self._step_text.setText(
-            f"Step {current + 1} of {TOTAL_PAGES} \u2014 {name}"
+            tr("wizard.step_of", current=current + 1, total=TOTAL_PAGES, name=name)
         )
 
     # ── Page 1: Welcome ──────────────────────────────────────────
@@ -167,33 +168,56 @@ class SetupWizard(QDialog):
         layout.addSpacing(12)
 
         # Title
-        title = QLabel("Welcome to WoWTranslator!")
-        title.setStyleSheet(
+        self._welcome_title = QLabel(tr("wizard.welcome.title"))
+        self._welcome_title.setStyleSheet(
             "color: #FFD200; font-size: 22px; font-weight: bold;"
         )
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        self._welcome_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._welcome_title)
 
         layout.addSpacing(8)
 
         # Description
-        desc = QLabel(
-            "WoWTranslator is a companion app that translates\n"
-            "World of Warcraft chat in real time.\n\n"
-            "How it works:\n"
-            "1. A tiny WoW addon enables chat logging\n"
-            "2. This app monitors the chat log file\n"
-            "3. Messages are auto-detected and translated via DeepL\n"
-            "4. Translations appear in a smart overlay on top of WoW\n\n"
-            "Let's set it up!"
+        self._welcome_desc = QLabel(tr("wizard.welcome.desc"))
+        self._welcome_desc.setStyleSheet("color: #ccc; font-size: 13px;")
+        self._welcome_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._welcome_desc.setWordWrap(True)
+        layout.addWidget(self._welcome_desc)
+
+        layout.addSpacing(16)
+
+        # UI language selector
+        lang_row = QHBoxLayout()
+        lang_row.addStretch()
+        ui_lang_label = QLabel(tr("wizard.welcome.ui_lang"))
+        ui_lang_label.setStyleSheet("color: #999; font-size: 12px;")
+        lang_row.addWidget(ui_lang_label)
+
+        self._ui_lang_combo = QComboBox()
+        self._ui_lang_combo.setStyleSheet(
+            "QComboBox { min-width: 140px; padding: 6px 8px; }"
         )
-        desc.setStyleSheet("color: #ccc; font-size: 13px;")
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        for code, name in UI_LANGUAGES.items():
+            self._ui_lang_combo.addItem(name, code)
+        self._ui_lang_combo.setCurrentIndex(
+            self._ui_lang_combo.findData(tr.get_language())
+        )
+        self._ui_lang_combo.currentIndexChanged.connect(self._on_ui_lang_changed)
+        lang_row.addWidget(self._ui_lang_combo)
+        lang_row.addStretch()
+        layout.addLayout(lang_row)
 
         layout.addStretch()
         return page
+
+    def _on_ui_lang_changed(self) -> None:
+        lang = self._ui_lang_combo.currentData()
+        if lang and lang != tr.get_language():
+            tr.set_language(lang)
+            self._config.ui_language = lang
+            # Signal main to restart wizard with new language
+            self._restart_requested = True
+            self.done(2)  # Custom result code: restart
 
     # ── Page 2: DeepL API Key ────────────────────────────────────
 
@@ -201,7 +225,7 @@ class SetupWizard(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        title = QLabel("DeepL API Key")
+        title = QLabel(tr("wizard.api.title"))
         title.setStyleSheet(
             "color: #FFD200; font-size: 16px; font-weight: bold;"
         )
@@ -209,26 +233,14 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(4)
 
-        explain = QLabel(
-            "WoWTranslator uses DeepL \u2014 one of the best translation "
-            "services available.\nThe free plan includes 500,000 characters "
-            "per month (that's a LOT of chat)."
-        )
+        explain = QLabel(tr("wizard.api.explain"))
         explain.setStyleSheet("color: #ccc; font-size: 12px;")
         explain.setWordWrap(True)
         layout.addWidget(explain)
 
         layout.addSpacing(8)
 
-        steps = QLabel(
-            "To get your free API key:\n\n"
-            "  1. Click the link below to sign up at DeepL\n"
-            "  2. Create a free account (DeepL API Free plan)\n"
-            "  3. After signup, go to your API Keys page\n"
-            "     (click the second link below)\n"
-            "  4. Copy your key (looks like: xxxxxxxx-xxxx-...:fx)\n"
-            "  5. Paste it in the field below"
-        )
+        steps = QLabel(tr("wizard.api.steps"))
         steps.setStyleSheet("color: #e0e0e0; font-size: 12px;")
         steps.setWordWrap(True)
         layout.addWidget(steps)
@@ -239,7 +251,7 @@ class SetupWizard(QDialog):
         signup = QLabel(
             '<a href="https://www.deepl.com/pro-api" '
             'style="color: #FFD200; font-size: 12px;">'
-            "\u2192 1. Sign up at DeepL (free)</a>"
+            f'{tr("wizard.api.signup")}</a>'
         )
         signup.setOpenExternalLinks(True)
         layout.addWidget(signup)
@@ -247,33 +259,22 @@ class SetupWizard(QDialog):
         keys_link = QLabel(
             '<a href="https://www.deepl.com/your-account/keys" '
             'style="color: #FFD200; font-size: 12px;">'
-            "\u2192 2. Open API Keys page (after signup)</a>"
+            f'{tr("wizard.api.keys_link")}</a>'
         )
         keys_link.setOpenExternalLinks(True)
         layout.addWidget(keys_link)
 
         layout.addSpacing(12)
 
-        # API Key input + Show/Hide
-        key_row = QHBoxLayout()
+        # API Key input (always visible)
         self._api_key_input = QLineEdit(self._config.deepl_api_key)
-        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_input.setPlaceholderText(
-            "Paste your DeepL API key here..."
-        )
+        self._api_key_input.setPlaceholderText(tr("wizard.api.placeholder"))
         self._api_key_input.textChanged.connect(self._on_api_key_changed)
-        key_row.addWidget(self._api_key_input, stretch=1)
-
-        self._show_key_btn = QPushButton("Show")
-        self._show_key_btn.setFixedWidth(60)
-        self._show_key_btn.setCheckable(True)
-        self._show_key_btn.clicked.connect(self._toggle_key_visibility)
-        key_row.addWidget(self._show_key_btn)
-        layout.addLayout(key_row)
+        layout.addWidget(self._api_key_input)
 
         # Validate + status
         action_row = QHBoxLayout()
-        self._validate_btn = QPushButton("Validate Key")
+        self._validate_btn = QPushButton(tr("wizard.api.validate"))
         self._validate_btn.clicked.connect(self._validate_api_key)
         action_row.addWidget(self._validate_btn)
 
@@ -286,25 +287,18 @@ class SetupWizard(QDialog):
         return page
 
     def _on_api_key_changed(self, text: str) -> None:
+        self._key_validated = False
         if self._stack.currentIndex() == PAGE_API_KEY:
-            self._next_btn.setEnabled(bool(text.strip()))
-
-    def _toggle_key_visibility(self, checked: bool) -> None:
-        if checked:
-            self._api_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._show_key_btn.setText("Hide")
-        else:
-            self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-            self._show_key_btn.setText("Show")
+            self._next_btn.setEnabled(False)
 
     def _validate_api_key(self) -> None:
         key = self._api_key_input.text().strip()
         if not key:
-            self._set_api_status("unconfigured", "No API key entered")
+            self._set_api_status("unconfigured", tr("wizard.api.no_key"))
             return
 
         self._validate_btn.setEnabled(False)
-        self._validate_btn.setText("Validating...")
+        self._validate_btn.setText(tr("wizard.api.validating"))
         QApplication.processEvents()
 
         try:
@@ -317,17 +311,20 @@ class SetupWizard(QDialog):
                 pct = int((count / limit) * 100) if limit else 0
                 self._set_api_status(
                     "valid",
-                    f"Key valid! Usage: {count:,} / {limit:,} ({pct}%)",
+                    tr("wizard.api.valid_usage",
+                       count=f"{count:,}", limit=f"{limit:,}", pct=pct),
                 )
             else:
-                self._set_api_status("valid", "API key valid!")
+                self._set_api_status("valid", tr("wizard.api.valid"))
+            self._key_validated = True
+            self._next_btn.setEnabled(True)
         except deepl.AuthorizationException:
-            self._set_api_status("invalid", "Invalid API key")
+            self._set_api_status("invalid", tr("wizard.api.invalid"))
         except Exception as e:
-            self._set_api_status("error", f"Connection error: {e}")
+            self._set_api_status("error", tr("wizard.api.error", e=e))
         finally:
             self._validate_btn.setEnabled(True)
-            self._validate_btn.setText("Validate Key")
+            self._validate_btn.setText(tr("wizard.api.validate"))
 
     def _set_api_status(self, state: str, message: str) -> None:
         colors = {
@@ -355,7 +352,7 @@ class SetupWizard(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        title = QLabel("World of Warcraft Location")
+        title = QLabel(tr("wizard.wow.title"))
         title.setStyleSheet(
             "color: #FFD200; font-size: 16px; font-weight: bold;"
         )
@@ -363,10 +360,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(4)
 
-        explain = QLabel(
-            "We need to find your WoW installation to monitor\n"
-            "the chat log file. We'll try to detect it automatically."
-        )
+        explain = QLabel(tr("wizard.wow.explain"))
         explain.setStyleSheet("color: #ccc; font-size: 12px;")
         explain.setWordWrap(True)
         layout.addWidget(explain)
@@ -381,7 +375,7 @@ class SetupWizard(QDialog):
         )
         path_row.addWidget(self._wow_path_input, stretch=1)
 
-        browse_btn = QPushButton("Browse...")
+        browse_btn = QPushButton(tr("wizard.wow.browse"))
         browse_btn.clicked.connect(self._browse_wow_path)
         path_row.addWidget(browse_btn)
         layout.addLayout(path_row)
@@ -393,10 +387,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(8)
 
-        hint = QLabel(
-            "You can skip this step and configure it later\n"
-            "in Settings."
-        )
+        hint = QLabel(tr("wizard.wow.skip_hint"))
         hint.setStyleSheet("color: #666; font-size: 11px;")
         layout.addWidget(hint)
 
@@ -407,29 +398,23 @@ class SetupWizard(QDialog):
         detected = detect_wow_path()
         if detected:
             self._wow_path_input.setText(detected)
-            self._wow_status_label.setText(
-                "\u2713 WoW installation found!"
-            )
+            self._wow_status_label.setText(tr("wizard.wow.found"))
             self._wow_status_label.setStyleSheet(
                 "color: #40FF40; font-weight: bold;"
             )
         else:
-            self._wow_status_label.setText(
-                "\u26A0 WoW not found automatically. "
-                "Please browse to your installation, "
-                "or skip and configure later."
-            )
+            self._wow_status_label.setText(tr("wizard.wow.not_found"))
             self._wow_status_label.setStyleSheet(
                 "color: #FF7F00; font-weight: bold;"
             )
 
     def _browse_wow_path(self) -> None:
         path = QFileDialog.getExistingDirectory(
-            self, "Select WoW Directory"
+            self, tr("wizard.wow.browse_title")
         )
         if path:
             self._wow_path_input.setText(path)
-            self._wow_status_label.setText("\u2713 Path set")
+            self._wow_status_label.setText(tr("wizard.wow.path_set"))
             self._wow_status_label.setStyleSheet(
                 "color: #40FF40; font-weight: bold;"
             )
@@ -440,7 +425,7 @@ class SetupWizard(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        title = QLabel("Choose Your Languages")
+        title = QLabel(tr("wizard.lang.title"))
         title.setStyleSheet(
             "color: #FFD200; font-size: 16px; font-weight: bold;"
         )
@@ -448,7 +433,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(8)
 
-        own_label = QLabel("What language do you speak?")
+        own_label = QLabel(tr("wizard.lang.own"))
         own_label.setStyleSheet("color: #ccc; font-size: 13px;")
         layout.addWidget(own_label)
 
@@ -462,7 +447,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(12)
 
-        target_label = QLabel("Translate messages to:")
+        target_label = QLabel(tr("wizard.lang.target"))
         target_label.setStyleSheet("color: #ccc; font-size: 13px;")
         layout.addWidget(target_label)
 
@@ -476,10 +461,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(12)
 
-        hint = QLabel(
-            "Messages in your language won't be translated.\n"
-            "Everything else will be translated to your target language."
-        )
+        hint = QLabel(tr("wizard.lang.hint"))
         hint.setStyleSheet("color: #999; font-size: 11px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -494,7 +476,7 @@ class SetupWizard(QDialog):
         layout = QVBoxLayout(page)
         layout.addStretch()
 
-        title = QLabel("\u2713 You're all set!")
+        title = QLabel(tr("wizard.ready.title"))
         title.setStyleSheet(
             "color: #FFD200; font-size: 20px; font-weight: bold;"
         )
@@ -512,19 +494,16 @@ class SetupWizard(QDialog):
         layout.addSpacing(12)
 
         # Addon install
-        addon_group = QGroupBox("WoW Addon")
+        addon_group = QGroupBox(tr("wizard.ready.addon_group"))
         addon_layout = QVBoxLayout(addon_group)
-        addon_text = QLabel(
-            "The tiny addon auto-enables chat logging so the "
-            "translator can read your messages."
-        )
+        addon_text = QLabel(tr("wizard.ready.addon_text"))
         addon_text.setWordWrap(True)
         addon_text.setStyleSheet("color: #ccc; font-size: 12px;")
         addon_layout.addWidget(addon_text)
 
         addon_layout.addSpacing(4)
 
-        self._install_addon_btn = QPushButton("Install Addon")
+        self._install_addon_btn = QPushButton(tr("wizard.ready.install_addon"))
         self._install_addon_btn.setStyleSheet(_GOLD_BTN_STYLE)
         self._install_addon_btn.clicked.connect(self._install_addon)
         addon_layout.addWidget(self._install_addon_btn)
@@ -537,10 +516,7 @@ class SetupWizard(QDialog):
 
         layout.addSpacing(8)
 
-        closing = QLabel(
-            "The overlay will appear on top of WoW.\n"
-            "Right-click the tray icon to access Settings and About."
-        )
+        closing = QLabel(tr("wizard.ready.closing"))
         closing.setStyleSheet("color: #999; font-size: 11px;")
         closing.setAlignment(Qt.AlignmentFlag.AlignCenter)
         closing.setWordWrap(True)
@@ -553,8 +529,8 @@ class SetupWizard(QDialog):
     def _addon_source_path() -> Path:
         """Return path to bundled ChatTranslatorHelper addon folder."""
         if getattr(sys, "frozen", False):
-            # PyInstaller bundle
-            base = Path(sys.executable).parent
+            # PyInstaller onefile: data extracted to _MEIPASS temp dir
+            base = Path(getattr(sys, "_MEIPASS", ""))
         else:
             base = Path(__file__).resolve().parent.parent
         return base / "addon" / "ChatTranslatorHelper"
@@ -562,9 +538,7 @@ class SetupWizard(QDialog):
     def _install_addon(self) -> None:
         wow = self._wow_path_input.text().strip()
         if not wow:
-            self._addon_status_label.setText(
-                "\u2717 WoW path not set — go back and configure it"
-            )
+            self._addon_status_label.setText(tr("wizard.ready.addon_no_path"))
             self._addon_status_label.setStyleSheet(
                 "color: #FF4040; font-weight: bold;"
             )
@@ -573,7 +547,7 @@ class SetupWizard(QDialog):
         addons_dir = Path(wow) / "_retail_" / "Interface" / "AddOns"
         if not addons_dir.parent.exists():
             self._addon_status_label.setText(
-                f"\u2717 Path not found: {addons_dir.parent}"
+                tr("wizard.ready.addon_path_not_found", path=addons_dir.parent)
             )
             self._addon_status_label.setStyleSheet(
                 "color: #FF4040; font-weight: bold;"
@@ -583,7 +557,7 @@ class SetupWizard(QDialog):
         src = self._addon_source_path()
         if not src.exists():
             self._addon_status_label.setText(
-                "\u2717 Addon files not found in app directory"
+                tr("wizard.ready.addon_files_missing")
             )
             self._addon_status_label.setStyleSheet(
                 "color: #FF4040; font-weight: bold;"
@@ -596,12 +570,12 @@ class SetupWizard(QDialog):
                 shutil.rmtree(dest)
             shutil.copytree(src, dest)
             self._addon_status_label.setText(
-                f"\u2713 Installed to {dest}"
+                tr("wizard.ready.addon_installed", dest=dest)
             )
             self._addon_status_label.setStyleSheet(
                 "color: #40FF40; font-weight: bold;"
             )
-            self._install_addon_btn.setText("Reinstall Addon")
+            self._install_addon_btn.setText(tr("wizard.ready.reinstall_addon"))
         except OSError as e:
             self._addon_status_label.setText(f"\u2717 {e}")
             self._addon_status_label.setStyleSheet(
@@ -613,13 +587,13 @@ class SetupWizard(QDialog):
         masked = f"****{key[-4:]}" if len(key) >= 4 else "****"
         own = LANGUAGES.get(self._own_lang.currentData(), "?")
         target = LANGUAGES.get(self._target_lang.currentData(), "?")
-        wow = self._wow_path_input.text() or "(not configured)"
+        wow = self._wow_path_input.text() or tr("wizard.ready.not_configured")
 
         self._summary_label.setText(
-            f"<b>API Key:</b> {masked}<br>"
-            f"<b>WoW Path:</b> {wow}<br>"
-            f"<b>Your language:</b> {own}<br>"
-            f"<b>Translate to:</b> {target}"
+            f"<b>{tr('wizard.ready.api_key')}</b> {masked}<br>"
+            f"<b>{tr('wizard.ready.wow_path')}</b> {wow}<br>"
+            f"<b>{tr('wizard.ready.own_lang')}</b> {own}<br>"
+            f"<b>{tr('wizard.ready.target_lang')}</b> {target}"
         )
 
     # ── Navigation ────────────────────────────────────────────────
@@ -644,8 +618,24 @@ class SetupWizard(QDialog):
         if index == PAGE_WOW_PATH:
             if not self._wow_path_input.text().strip():
                 self._auto_detect_wow()
+        elif index == PAGE_LANGUAGE:
+            self._apply_language_defaults()
         elif index == PAGE_READY:
             self._update_summary()
+
+    def _apply_language_defaults(self) -> None:
+        """Set smart defaults based on UI language selection.
+
+        Russian UI → own=EN, translate to=RU (русский переводит НА русский)
+        English UI → own=RU, translate to=EN (англичанин переводит НА английский)
+        """
+        ui_lang = tr.get_language()
+        if ui_lang == "RU":
+            self._own_lang.setCurrentIndex(self._own_lang.findData("EN"))
+            self._target_lang.setCurrentIndex(self._target_lang.findData("RU"))
+        else:
+            self._own_lang.setCurrentIndex(self._own_lang.findData("RU"))
+            self._target_lang.setCurrentIndex(self._target_lang.findData("EN"))
 
     def _update_navigation(self) -> None:
         current = self._stack.currentIndex()
@@ -653,14 +643,12 @@ class SetupWizard(QDialog):
         self._back_btn.setVisible(current > 0)
 
         if current == TOTAL_PAGES - 1:
-            self._next_btn.setText("Start \u2713")
+            self._next_btn.setText(tr("wizard.start"))
         else:
-            self._next_btn.setText("Next \u2192")
+            self._next_btn.setText(tr("wizard.next"))
 
         if current == PAGE_API_KEY:
-            self._next_btn.setEnabled(
-                bool(self._api_key_input.text().strip())
-            )
+            self._next_btn.setEnabled(self._key_validated)
         else:
             self._next_btn.setEnabled(True)
 
@@ -673,6 +661,7 @@ class SetupWizard(QDialog):
         self._config.wow_path = self._wow_path_input.text().strip()
         self._config.own_language = self._own_lang.currentData()
         self._config.target_language = self._target_lang.currentData()
+        self._config.ui_language = tr.get_language()
         self._config.save()
         self.accept()
 

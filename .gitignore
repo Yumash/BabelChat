@@ -18,6 +18,15 @@ __pycache__/
 # Temp
 temp/
 
+# Runtime config/state (user-specific)
+config.json
+overlay_settings.json
+settings_dialog_pos.json
+debug.log
+
+# Downloaded addons (research)
+AutoChatLog/
+
 # MCP config (local paths)
 .mcp.json
 

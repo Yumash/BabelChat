@@ -1,27 +1,66 @@
-"""File watcher for WoW Chat Log using watchdog."""
+"""File watcher for WoW Chat Log using polling.
+
+WoW buffers chat log writes, so filesystem events (watchdog) are unreliable.
+Instead we poll the file size every POLL_INTERVAL seconds.
+"""
 
 from __future__ import annotations
 
 import logging
-import os
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
-
 logger = logging.getLogger(__name__)
 
+POLL_INTERVAL = 2.0  # seconds
 
-class ChatLogHandler(FileSystemEventHandler):
-    """Watches a single file for modifications and creation, reads new lines."""
+
+class ChatLogWatcher:
+    """Monitors WoWChatLog.txt for new lines by polling file size.
+
+    Usage:
+        watcher = ChatLogWatcher(Path("WoWChatLog.txt"), handle_line)
+        watcher.start()
+        # ... later ...
+        watcher.stop()
+    """
 
     def __init__(self, file_path: Path, on_new_line: Callable[[str], None]) -> None:
-        super().__init__()
-        self._file_path = file_path
+        self._file_path = file_path.resolve()
         self._on_new_line = on_new_line
         self._position: int = 0
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def read_tail(self, max_lines: int = 50) -> list[str]:
+        """Read last N lines from the file (for history on startup)."""
+        try:
+            with open(self._file_path, encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
+        except (FileNotFoundError, OSError):
+            return []
+        result = []
+        for line in all_lines[-max_lines:]:
+            stripped = line.strip()
+            if stripped:
+                result.append(stripped)
+        return result
+
+    def start(self) -> None:
+        """Start polling the chat log file."""
         self._seek_to_end()
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+        logger.info("Watching (poll) %s", self._file_path)
+
+    def stop(self) -> None:
+        """Stop polling."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        logger.info("Stopped watching")
 
     def _seek_to_end(self) -> None:
         """Move position to end of file so we only get new lines."""
@@ -29,6 +68,12 @@ class ChatLogHandler(FileSystemEventHandler):
             self._position = self._file_path.stat().st_size
         except FileNotFoundError:
             self._position = 0
+
+    def _poll_loop(self) -> None:
+        """Poll file for changes every POLL_INTERVAL seconds."""
+        while not self._stop_event.is_set():
+            self._read_new_lines()
+            self._stop_event.wait(POLL_INTERVAL)
 
     def _read_new_lines(self) -> None:
         """Read any new lines from current position."""
@@ -58,49 +103,3 @@ class ChatLogHandler(FileSystemEventHandler):
             stripped = line.strip()
             if stripped:
                 self._on_new_line(stripped)
-
-    def on_modified(self, event: FileSystemEvent) -> None:
-        if not event.is_directory and os.path.normpath(event.src_path) == os.path.normpath(
-            str(self._file_path)
-        ):
-            self._read_new_lines()
-
-    def on_created(self, event: FileSystemEvent) -> None:
-        if not event.is_directory and os.path.normpath(event.src_path) == os.path.normpath(
-            str(self._file_path)
-        ):
-            logger.info("Chat log file (re)created")
-            self._position = 0
-            self._read_new_lines()
-
-
-class ChatLogWatcher:
-    """Monitors WoWChatLog.txt for new lines using watchdog.
-
-    Usage:
-        def handle_line(line: str) -> None:
-            print(line)
-
-        watcher = ChatLogWatcher(Path("WoWChatLog.txt"), handle_line)
-        watcher.start()
-        # ... later ...
-        watcher.stop()
-    """
-
-    def __init__(self, file_path: Path, on_new_line: Callable[[str], None]) -> None:
-        self._file_path = file_path.resolve()
-        self._handler = ChatLogHandler(self._file_path, on_new_line)
-        self._observer = Observer()
-
-    def start(self) -> None:
-        """Start watching the chat log directory."""
-        watch_dir = str(self._file_path.parent)
-        self._observer.schedule(self._handler, watch_dir, recursive=False)
-        self._observer.start()
-        logger.info("Watching %s", self._file_path)
-
-    def stop(self) -> None:
-        """Stop watching."""
-        self._observer.stop()
-        self._observer.join(timeout=5)
-        logger.info("Stopped watching")

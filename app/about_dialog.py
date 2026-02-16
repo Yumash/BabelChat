@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.i18n import tr
+
 VERSION = "1.0.0"
 
 ABOUT_STYLESHEET = """
@@ -61,7 +63,7 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("About WoWTranslator")
+        self.setWindowTitle(tr("about.title"))
         self.setFixedSize(420, 380)
         self.setStyleSheet(ABOUT_STYLESHEET)
 
@@ -109,7 +111,7 @@ class AboutDialog(QDialog):
         version.setStyleSheet("color: #999; font-size: 12px;")
         title_block.addWidget(version)
 
-        subtitle = QLabel("Real-time WoW chat translator")
+        subtitle = QLabel(tr("about.subtitle"))
         subtitle.setStyleSheet("color: #ccc; font-size: 13px;")
         title_block.addWidget(subtitle)
 
@@ -125,12 +127,12 @@ class AboutDialog(QDialog):
         layout.addWidget(sep)
 
         # Developer
-        dev_label = QLabel("Developer: <b>Andrey Yumashev</b>")
+        dev_label = QLabel(f"{tr('about.developer')} <b>Andrey Yumashev</b>")
         dev_label.setStyleSheet("color: #ccc; font-size: 12px;")
         layout.addWidget(dev_label)
 
         # License
-        license_label = QLabel("License: GPL-3.0")
+        license_label = QLabel(tr("about.license"))
         license_label.setStyleSheet("color: #999; font-size: 11px;")
         layout.addWidget(license_label)
 
@@ -142,7 +144,7 @@ class AboutDialog(QDialog):
 
         guild_label = QLabel(
             '<span style="color: #FFD200; font-size: 12px;">'
-            "\u2694 Made with love and support of the best WoW guild</span>"
+            f'{tr("about.guild_credit")}</span>'
         )
         guild_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(guild_label)
@@ -176,7 +178,7 @@ class AboutDialog(QDialog):
         layout.addStretch()
 
         # Close button
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(tr("about.close"))
         close_btn.clicked.connect(self.accept)
         close_btn.setFixedWidth(100)
         btn_layout = QHBoxLayout()

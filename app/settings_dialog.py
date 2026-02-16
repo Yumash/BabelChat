@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.config import AppConfig, detect_wow_path
+from app.i18n import UI_LANGUAGES, tr
 
 # DeepL supported target languages
 LANGUAGES = {
@@ -238,7 +239,7 @@ class HotkeyEdit(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self._label = QLabel(current or "(none)")
+        self._label = QLabel(current or tr("settings.hk.none"))
         self._label.setStyleSheet(
             "color: #FFD200; font-weight: bold; font-size: 12px; padding: 4px 8px;"
             "background: #111; border: 1px solid #555; border-radius: 3px;"
@@ -246,13 +247,13 @@ class HotkeyEdit(QWidget):
         self._label.setMinimumWidth(140)
         layout.addWidget(self._label)
 
-        self._btn = QPushButton("Change")
-        self._btn.setFixedWidth(70)
+        self._btn = QPushButton(tr("settings.hk.change"))
+        self._btn.setFixedWidth(90)
         self._btn.clicked.connect(self._start_recording)
         layout.addWidget(self._btn)
 
-        self._clear_btn = QPushButton("Clear")
-        self._clear_btn.setFixedWidth(50)
+        self._clear_btn = QPushButton(tr("settings.hk.clear"))
+        self._clear_btn.setFixedWidth(70)
         self._clear_btn.clicked.connect(self._clear)
         layout.addWidget(self._clear_btn)
 
@@ -263,30 +264,30 @@ class HotkeyEdit(QWidget):
 
     def _start_recording(self) -> None:
         self._recording = True
-        self._label.setText("Press keys...")
+        self._label.setText(tr("settings.hk.press_keys"))
         self._label.setStyleSheet(
             "color: #40FF40; font-weight: bold; font-size: 12px; padding: 4px 8px;"
             "background: #111; border: 1px solid #40FF40; border-radius: 3px;"
         )
-        self._btn.setText("Cancel")
+        self._btn.setText(tr("settings.hk.cancel"))
         self._btn.clicked.disconnect()
         self._btn.clicked.connect(self._cancel_recording)
         self.setFocus()
 
     def _cancel_recording(self) -> None:
         self._recording = False
-        self._label.setText(self._hotkey or "(none)")
+        self._label.setText(self._hotkey or tr("settings.hk.none"))
         self._label.setStyleSheet(
             "color: #FFD200; font-weight: bold; font-size: 12px; padding: 4px 8px;"
             "background: #111; border: 1px solid #555; border-radius: 3px;"
         )
-        self._btn.setText("Change")
+        self._btn.setText(tr("settings.hk.change"))
         self._btn.clicked.disconnect()
         self._btn.clicked.connect(self._start_recording)
 
     def _clear(self) -> None:
         self._hotkey = ""
-        self._label.setText("(none)")
+        self._label.setText(tr("settings.hk.none"))
         self._cancel_recording()
         self.hotkey_changed.emit("")
 
@@ -338,7 +339,7 @@ class HotkeyEdit(QWidget):
             "color: #FFD200; font-weight: bold; font-size: 12px; padding: 4px 8px;"
             "background: #111; border: 1px solid #555; border-radius: 3px;"
         )
-        self._btn.setText("Change")
+        self._btn.setText(tr("settings.hk.change"))
         self._btn.clicked.disconnect()
         self._btn.clicked.connect(self._start_recording)
         self.hotkey_changed.emit(combo)
@@ -367,24 +368,28 @@ def _create_dialog_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+_SETTINGS_DIALOG_POS_FILE = "settings_dialog_pos.json"
+
+
 class SettingsDialog(QDialog):
     """Settings window with WoW-themed dark UI."""
 
     def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self.setWindowTitle("WoWTranslator Settings")
+        self.setWindowTitle(tr("settings.title"))
         self.setWindowIcon(_create_dialog_icon())
         self.setMinimumSize(500, 520)
         self.setStyleSheet(WOW_THEME_STYLESHEET)
+        self._restore_position()
 
         layout = QVBoxLayout(self)
 
         # Tab widget
         tabs = QTabWidget()
-        tabs.addTab(self._create_general_tab(), "General")
-        tabs.addTab(self._create_overlay_tab(), "Overlay")
-        tabs.addTab(self._create_hotkeys_tab(), "Hotkeys")
+        tabs.addTab(self._create_general_tab(), tr("settings.tab.general"))
+        tabs.addTab(self._create_overlay_tab(), tr("settings.tab.overlay"))
+        tabs.addTab(self._create_hotkeys_tab(), tr("settings.tab.hotkeys"))
         layout.addWidget(tabs)
 
         # Buttons
@@ -396,13 +401,16 @@ class SettingsDialog(QDialog):
 
         # Gold-styled Save button
         ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        ok_btn.setText("Save")
+        ok_btn.setText(tr("settings.save"))
         ok_btn.setStyleSheet(
             "QPushButton { background: #3a3000; color: #FFD200; "
             "border: 1px solid #FFD200; border-radius: 3px; padding: 8px 20px; }"
             "QPushButton:hover { background: #4a4000; }"
             "QPushButton:pressed { background: #555; }"
         )
+
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_btn.setText(tr("wizard.cancel"))
 
         layout.addWidget(buttons)
 
@@ -416,27 +424,23 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._create_api_group())
 
         # WoW Path
-        path_group = QGroupBox("World of Warcraft")
+        path_group = QGroupBox(tr("settings.wow_group"))
         path_layout = QFormLayout(path_group)
 
         wow_row = QHBoxLayout()
         self._wow_path_input = QLineEdit(self._config.wow_path)
         self._wow_path_input.setPlaceholderText("C:/Program Files/World of Warcraft")
         wow_row.addWidget(self._wow_path_input)
-        browse_btn = QPushButton("Browse")
+        browse_btn = QPushButton(tr("settings.wow.browse"))
         browse_btn.clicked.connect(self._browse_wow_path)
         wow_row.addWidget(browse_btn)
-        detect_btn = QPushButton("Auto")
+        detect_btn = QPushButton(tr("settings.wow.auto"))
         detect_btn.clicked.connect(self._auto_detect_wow)
         wow_row.addWidget(detect_btn)
-        path_layout.addRow("WoW Path:", wow_row)
-
-        self._chatlog_input = QLineEdit(self._config.chatlog_path)
-        self._chatlog_input.setPlaceholderText("Auto-detected from WoW path")
-        path_layout.addRow("Chat Log:", self._chatlog_input)
+        path_layout.addRow(tr("settings.wow.path"), wow_row)
 
         addon_row = QHBoxLayout()
-        self._install_addon_btn = QPushButton("Install Addon to WoW")
+        self._install_addon_btn = QPushButton(tr("settings.wow.install_addon"))
         self._install_addon_btn.setStyleSheet(
             "QPushButton { background: #3a3000; color: #FFD200; "
             "border: 1px solid #FFD200; border-radius: 3px; padding: 6px 14px; }"
@@ -452,8 +456,16 @@ class SettingsDialog(QDialog):
         layout.addWidget(path_group)
 
         # Language
-        lang_group = QGroupBox("Languages")
+        lang_group = QGroupBox(tr("settings.lang_group"))
         lang_layout = QFormLayout(lang_group)
+
+        self._ui_lang = QComboBox()
+        for code, name in UI_LANGUAGES.items():
+            self._ui_lang.addItem(name, code)
+        self._ui_lang.setCurrentIndex(
+            self._ui_lang.findData(self._config.ui_language)
+        )
+        lang_layout.addRow(tr("settings.lang.ui"), self._ui_lang)
 
         self._own_lang = QComboBox()
         self._target_lang = QComboBox()
@@ -467,24 +479,24 @@ class SettingsDialog(QDialog):
         self._target_lang.setCurrentIndex(
             self._target_lang.findData(self._config.target_language)
         )
-        lang_layout.addRow("My language:", self._own_lang)
-        lang_layout.addRow("Translate to:", self._target_lang)
+        lang_layout.addRow(tr("settings.lang.own"), self._own_lang)
+        lang_layout.addRow(tr("settings.lang.target"), self._target_lang)
         layout.addWidget(lang_group)
 
         # Channels — 3-column grid
-        ch_group = QGroupBox("Channels to translate")
+        ch_group = QGroupBox(tr("settings.channels_group"))
         ch_grid = QGridLayout(ch_group)
-        self._ch_party = QCheckBox("Party")
+        self._ch_party = QCheckBox(tr("settings.ch.party"))
         self._ch_party.setChecked(self._config.channels_party)
-        self._ch_raid = QCheckBox("Raid")
+        self._ch_raid = QCheckBox(tr("settings.ch.raid"))
         self._ch_raid.setChecked(self._config.channels_raid)
-        self._ch_guild = QCheckBox("Guild")
+        self._ch_guild = QCheckBox(tr("settings.ch.guild"))
         self._ch_guild.setChecked(self._config.channels_guild)
-        self._ch_say = QCheckBox("Say / Yell")
+        self._ch_say = QCheckBox(tr("settings.ch.say"))
         self._ch_say.setChecked(self._config.channels_say)
-        self._ch_whisper = QCheckBox("Whisper")
+        self._ch_whisper = QCheckBox(tr("settings.ch.whisper"))
         self._ch_whisper.setChecked(self._config.channels_whisper)
-        self._ch_instance = QCheckBox("Instance")
+        self._ch_instance = QCheckBox(tr("settings.ch.instance"))
         self._ch_instance.setChecked(self._config.channels_instance)
         ch_grid.addWidget(self._ch_party, 0, 0)
         ch_grid.addWidget(self._ch_raid, 0, 1)
@@ -500,27 +512,18 @@ class SettingsDialog(QDialog):
     # ── API Key Group ────────────────────────────────────────────
 
     def _create_api_group(self) -> QGroupBox:
-        api_group = QGroupBox("DeepL API")
+        api_group = QGroupBox(tr("settings.api_group"))
         api_layout = QVBoxLayout(api_group)
 
-        # Row 1: API Key input + Show/Hide
-        key_row = QHBoxLayout()
+        # Row 1: API Key input (always visible)
         self._api_key_input = QLineEdit(self._config.deepl_api_key)
-        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_input.setPlaceholderText("Enter your DeepL API key...")
-        key_row.addWidget(self._api_key_input, stretch=1)
-
-        self._show_key_btn = QPushButton("Show")
-        self._show_key_btn.setFixedWidth(60)
-        self._show_key_btn.setCheckable(True)
-        self._show_key_btn.clicked.connect(self._toggle_key_visibility)
-        key_row.addWidget(self._show_key_btn)
-        api_layout.addLayout(key_row)
+        self._api_key_input.setPlaceholderText(tr("settings.api.placeholder"))
+        api_layout.addWidget(self._api_key_input)
 
         # Row 2: Validate + status + signup link
         action_row = QHBoxLayout()
 
-        self._validate_btn = QPushButton("Validate Key")
+        self._validate_btn = QPushButton(tr("settings.api.validate"))
         self._validate_btn.clicked.connect(self._validate_api_key)
         action_row.addWidget(self._validate_btn)
 
@@ -530,7 +533,7 @@ class SettingsDialog(QDialog):
 
         keys_link = QLabel(
             '<a href="https://www.deepl.com/your-account/keys" '
-            'style="color: #FFD200;">Get API key</a>'
+            f'style="color: #FFD200;">{tr("settings.api.get_key")}</a>'
         )
         keys_link.setOpenExternalLinks(True)
         action_row.addWidget(keys_link)
@@ -542,7 +545,7 @@ class SettingsDialog(QDialog):
         usage_layout.setContentsMargins(0, 4, 0, 0)
 
         usage_header = QHBoxLayout()
-        usage_title = QLabel("Character Usage")
+        usage_title = QLabel(tr("settings.api.usage"))
         usage_title.setStyleSheet("color: #999; font-size: 11px;")
         usage_header.addWidget(usage_title)
         self._usage_detail_label = QLabel("")
@@ -564,24 +567,16 @@ class SettingsDialog(QDialog):
 
         return api_group
 
-    def _toggle_key_visibility(self, checked: bool) -> None:
-        if checked:
-            self._api_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._show_key_btn.setText("Hide")
-        else:
-            self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-            self._show_key_btn.setText("Show")
-
     def _validate_api_key(self) -> None:
         """Test the API key and show usage stats."""
         key = self._api_key_input.text().strip()
         if not key:
-            self._set_api_status("unconfigured", "No API key entered")
+            self._set_api_status("unconfigured", tr("settings.api.no_key"))
             self._usage_widget.hide()
             return
 
         self._validate_btn.setEnabled(False)
-        self._validate_btn.setText("Validating...")
+        self._validate_btn.setText(tr("settings.api.validating"))
         QApplication.processEvents()
 
         try:
@@ -595,7 +590,7 @@ class SettingsDialog(QDialog):
 
                 self._usage_bar.setValue(pct)
                 self._usage_detail_label.setText(
-                    f"{count:,} / {limit:,} characters ({pct}%)"
+                    f"{count:,} / {limit:,} ({pct}%)"
                 )
 
                 if pct >= 90:
@@ -609,20 +604,20 @@ class SettingsDialog(QDialog):
                 )
 
                 self._usage_widget.show()
-                self._set_api_status("valid", "API key valid")
+                self._set_api_status("valid", tr("settings.api.valid"))
             else:
-                self._set_api_status("valid", "API key valid (no usage data)")
+                self._set_api_status("valid", tr("settings.api.valid_no_data"))
                 self._usage_widget.hide()
 
         except deepl.AuthorizationException:
-            self._set_api_status("invalid", "Invalid API key")
+            self._set_api_status("invalid", tr("settings.api.invalid"))
             self._usage_widget.hide()
         except Exception as e:
-            self._set_api_status("error", f"Connection error: {e}")
+            self._set_api_status("error", tr("settings.api.error", e=e))
             self._usage_widget.hide()
         finally:
             self._validate_btn.setEnabled(True)
-            self._validate_btn.setText("Validate Key")
+            self._validate_btn.setText(tr("settings.api.validate"))
 
     def _set_api_status(self, state: str, message: str) -> None:
         colors = {
@@ -644,9 +639,9 @@ class SettingsDialog(QDialog):
 
     def _update_api_status_indicator(self) -> None:
         if self._config.deepl_api_key:
-            self._set_api_status("unconfigured", "Key saved \u2014 click Validate to check")
+            self._set_api_status("unconfigured", tr("settings.api.saved_hint"))
         else:
-            self._set_api_status("unconfigured", "No API key configured")
+            self._set_api_status("unconfigured", tr("settings.api.not_configured"))
 
     # ── Overlay Tab ──────────────────────────────────────────────
 
@@ -655,7 +650,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(tab)
 
         # Appearance
-        appear_group = QGroupBox("Appearance")
+        appear_group = QGroupBox(tr("settings.appearance_group"))
         appear_layout = QFormLayout(appear_group)
 
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
@@ -671,20 +666,20 @@ class SettingsDialog(QDialog):
         opacity_row = QHBoxLayout()
         opacity_row.addWidget(self._opacity_slider)
         opacity_row.addWidget(self._opacity_label)
-        appear_layout.addRow("Opacity:", opacity_row)
+        appear_layout.addRow(tr("settings.overlay.opacity"), opacity_row)
 
         self._font_size = QSpinBox()
         self._font_size.setRange(8, 20)
         self._font_size.setValue(self._config.overlay_font_size)
-        appear_layout.addRow("Font size:", self._font_size)
+        appear_layout.addRow(tr("settings.overlay.font_size"), self._font_size)
 
         layout.addWidget(appear_group)
 
         # Behavior
-        behavior_group = QGroupBox("Behavior")
+        behavior_group = QGroupBox(tr("settings.behavior_group"))
         behavior_layout = QVBoxLayout(behavior_group)
 
-        self._translate_default = QCheckBox("Translation ON by default")
+        self._translate_default = QCheckBox(tr("settings.overlay.translate_default"))
         self._translate_default.setChecked(self._config.translation_enabled_default)
         behavior_layout.addWidget(self._translate_default)
 
@@ -698,24 +693,18 @@ class SettingsDialog(QDialog):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        hk_group = QGroupBox("Hotkeys")
+        hk_group = QGroupBox(tr("settings.hk_group"))
         hk_layout = QFormLayout(hk_group)
 
         self._hk_toggle = HotkeyEdit(self._config.hotkey_toggle_translate)
-        hk_layout.addRow("Toggle translate:", self._hk_toggle)
-        toggle_hint = QLabel("Show/hide translations in the overlay")
+        hk_layout.addRow(tr("settings.hk.toggle_translate"), self._hk_toggle)
+        toggle_hint = QLabel(tr("settings.hk.toggle_translate_hint"))
         toggle_hint.setStyleSheet("color: #666; font-size: 10px;")
         hk_layout.addRow("", toggle_hint)
 
-        self._hk_interactive = HotkeyEdit(self._config.hotkey_toggle_interactive)
-        hk_layout.addRow("Toggle interactive:", self._hk_interactive)
-        interactive_hint = QLabel("Switch overlay between click-through and interactive mode")
-        interactive_hint.setStyleSheet("color: #666; font-size: 10px;")
-        hk_layout.addRow("", interactive_hint)
-
         self._hk_clipboard = HotkeyEdit(self._config.hotkey_clipboard_translate)
-        hk_layout.addRow("Clipboard translate:", self._hk_clipboard)
-        clipboard_hint = QLabel("Translate clipboard text and copy result back")
+        hk_layout.addRow(tr("settings.hk.clipboard"), self._hk_clipboard)
+        clipboard_hint = QLabel(tr("settings.hk.clipboard_hint"))
         clipboard_hint.setStyleSheet("color: #666; font-size: 10px;")
         hk_layout.addRow("", clipboard_hint)
 
@@ -726,7 +715,7 @@ class SettingsDialog(QDialog):
     # ── Actions ──────────────────────────────────────────────────
 
     def _browse_wow_path(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Select WoW Directory")
+        path = QFileDialog.getExistingDirectory(self, tr("settings.wow.browse_title"))
         if path:
             self._wow_path_input.setText(path)
 
@@ -738,23 +727,25 @@ class SettingsDialog(QDialog):
     def _install_addon(self) -> None:
         wow = self._wow_path_input.text().strip()
         if not wow:
-            self._addon_status.setText("\u2717 Set WoW path first")
+            self._addon_status.setText(tr("settings.wow.addon_no_path"))
             self._addon_status.setStyleSheet("color: #FF4040; font-weight: bold;")
             return
 
         addons_dir = Path(wow) / "_retail_" / "Interface" / "AddOns"
         if not addons_dir.parent.exists():
-            self._addon_status.setText(f"\u2717 Not found: {addons_dir.parent}")
+            self._addon_status.setText(
+                tr("settings.wow.addon_not_found", path=addons_dir.parent)
+            )
             self._addon_status.setStyleSheet("color: #FF4040; font-weight: bold;")
             return
 
         if getattr(sys, "frozen", False):
-            src = Path(sys.executable).parent / "addon" / "ChatTranslatorHelper"
+            src = Path(getattr(sys, "_MEIPASS", "")) / "addon" / "ChatTranslatorHelper"
         else:
             src = Path(__file__).resolve().parent.parent / "addon" / "ChatTranslatorHelper"
 
         if not src.exists():
-            self._addon_status.setText("\u2717 Addon files not found")
+            self._addon_status.setText(tr("settings.wow.addon_files_missing"))
             self._addon_status.setStyleSheet("color: #FF4040; font-weight: bold;")
             return
 
@@ -763,9 +754,9 @@ class SettingsDialog(QDialog):
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(src, dest)
-            self._addon_status.setText(f"\u2713 Installed!")
+            self._addon_status.setText(tr("settings.wow.addon_installed"))
             self._addon_status.setStyleSheet("color: #40FF40; font-weight: bold;")
-            self._install_addon_btn.setText("Reinstall Addon")
+            self._install_addon_btn.setText(tr("settings.wow.reinstall_addon"))
         except OSError as e:
             self._addon_status.setText(f"\u2717 {e}")
             self._addon_status.setStyleSheet("color: #FF4040; font-weight: bold;")
@@ -773,7 +764,7 @@ class SettingsDialog(QDialog):
     def _save_and_accept(self) -> None:
         self._config.deepl_api_key = self._api_key_input.text().strip()
         self._config.wow_path = self._wow_path_input.text().strip()
-        self._config.chatlog_path = self._chatlog_input.text().strip()
+        self._config.ui_language = self._ui_lang.currentData()
         self._config.own_language = self._own_lang.currentData()
         self._config.target_language = self._target_lang.currentData()
         self._config.channels_party = self._ch_party.isChecked()
@@ -786,10 +777,34 @@ class SettingsDialog(QDialog):
         self._config.overlay_font_size = self._font_size.value()
         self._config.translation_enabled_default = self._translate_default.isChecked()
         self._config.hotkey_toggle_translate = self._hk_toggle.text()
-        self._config.hotkey_toggle_interactive = self._hk_interactive.text()
         self._config.hotkey_clipboard_translate = self._hk_clipboard.text()
+        # Apply UI language change
+        new_lang = self._ui_lang.currentData()
+        if new_lang != tr.get_language():
+            tr.set_language(new_lang)
         self._config.save()
         self.accept()
+
+    def _restore_position(self) -> None:
+        import json
+        try:
+            data = json.loads(Path(_SETTINGS_DIALOG_POS_FILE).read_text(encoding="utf-8"))
+            self.move(data.get("x", 200), data.get("y", 200))
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+
+    def _save_position(self) -> None:
+        import contextlib
+        import json
+        with contextlib.suppress(OSError):
+            data = {"x": self.x(), "y": self.y()}
+            Path(_SETTINGS_DIALOG_POS_FILE).write_text(
+                json.dumps(data), encoding="utf-8"
+            )
+
+    def closeEvent(self, event: object) -> None:
+        self._save_position()
+        super().closeEvent(event)  # type: ignore[arg-type]
 
     def get_config(self) -> AppConfig:
         return self._config

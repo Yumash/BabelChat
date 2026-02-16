@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +23,13 @@ from app.text_utils import (
 )
 from app.translator import TranslationResult, TranslatorService
 from app.watcher import ChatLogWatcher
+
+# Memory reader is optional — requires pymem and admin privileges
+try:
+    from app.memory_reader import MemoryChatWatcher
+    HAS_MEMORY_READER = True
+except ImportError:
+    HAS_MEMORY_READER = False
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +93,7 @@ class PipelineConfig:
     })
     translation_enabled: bool = True
     db_path: str = "translations.db"
+    use_memory_reader: bool = True  # Try memory reader first, fallback to file
 
 
 class TranslationPipeline:
@@ -107,6 +117,17 @@ class TranslationPipeline:
         self._translator = TranslatorService(api_key=config.deepl_api_key)
         self._watcher = ChatLogWatcher(config.chatlog_path, self._on_new_line)
 
+        # Deduplication: track recent (author, text) to avoid double-delivery
+        # when both memory reader and file watcher deliver the same message
+        self._recent_messages: OrderedDict[tuple[str, str], float] = OrderedDict()
+        self._dedup_ttl = 30.0  # seconds
+
+        # Memory reader (optional, real-time delivery)
+        self._memory_watcher = None
+        if config.use_memory_reader and HAS_MEMORY_READER:
+            self._memory_watcher = MemoryChatWatcher(self._on_new_line)
+            logger.info("Memory reader available, will try real-time mode")
+
     @property
     def translation_enabled(self) -> bool:
         return self._config.translation_enabled
@@ -116,29 +137,81 @@ class TranslationPipeline:
         self._config.translation_enabled = value
         logger.info("Translation %s", "enabled" if value else "disabled")
 
+    def load_history(self, max_lines: int = 50) -> list[TranslatedMessage]:
+        """Read last N lines from the log and parse them (no translation)."""
+        lines = self._watcher.read_tail(max_lines)
+        messages = []
+        for line in lines:
+            msg = parse_line(line)
+            if msg is None:
+                continue
+            if msg.channel not in self._config.enabled_channels:
+                continue
+            messages.append(TranslatedMessage(original=msg, translation=None))
+        return messages
+
     def start(self) -> None:
-        """Start watching the chat log and translating."""
+        """Start watching the chat log and translating.
+
+        Tries memory reader first for real-time delivery.
+        Always starts file watcher as fallback (catches messages
+        memory reader might miss, provides history support).
+        """
+        # Always start file watcher (for history + fallback)
         self._watcher.start()
-        logger.info("Pipeline started")
+
+        # Try memory reader for real-time delivery
+        if self._memory_watcher:
+            try:
+                self._memory_watcher.start()
+                logger.info("Pipeline started (memory reader + file watcher)")
+            except Exception as e:
+                logger.warning("Memory reader failed to start: %s", e)
+                logger.info("Pipeline started (file watcher only)")
+        else:
+            logger.info("Pipeline started (file watcher only)")
 
     def stop(self) -> None:
         """Stop the pipeline."""
+        if self._memory_watcher:
+            self._memory_watcher.stop()
         self._watcher.stop()
         self._cache.close()
         logger.info("Pipeline stopped")
 
     def _on_new_line(self, line: str) -> None:
-        """Process a new line from the chat log."""
+        """Process a new line from the chat log or memory reader."""
+        logger.debug("New line: %s", line[:120])
         msg = parse_line(line)
         if msg is None:
+            logger.debug("Parse returned None")
             return
+
+        logger.info("Parsed: [%s] %s: %s", msg.channel.value, msg.author, msg.text[:60])
+
+        # Deduplicate: both memory reader and file watcher may deliver same message
+        dedup_key = (msg.author, msg.text)
+        now = time.time()
+        if dedup_key in self._recent_messages:
+            logger.debug("Duplicate message from %s, skipping", msg.author)
+            return
+        self._recent_messages[dedup_key] = now
+        # Evict old entries
+        while self._recent_messages:
+            oldest_key, oldest_ts = next(iter(self._recent_messages.items()))
+            if now - oldest_ts > self._dedup_ttl:
+                self._recent_messages.pop(oldest_key)
+            else:
+                break
 
         # Filter by channel
         if msg.channel not in self._config.enabled_channels:
+            logger.debug("Channel %s not enabled", msg.channel)
             return
 
-        # Filter own messages
+        # Own messages — show in overlay but never translate
         if self._config.own_character and msg.author == self._config.own_character:
+            self._on_message(TranslatedMessage(original=msg, translation=None))
             return
 
         # Translation disabled — still emit message without translation

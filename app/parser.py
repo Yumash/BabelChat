@@ -23,7 +23,7 @@ class Channel(Enum):
     INSTANCE_LEADER = "Instance Leader"
 
 
-# Map raw log channel names to enum
+# Map raw log channel names to enum (English + Russian client)
 _CHANNEL_MAP: dict[str, Channel] = {
     "Say": Channel.SAY,
     "Yell": Channel.YELL,
@@ -36,6 +36,33 @@ _CHANNEL_MAP: dict[str, Channel] = {
     "Officer": Channel.OFFICER,
     "Instance": Channel.INSTANCE,
     "Instance Leader": Channel.INSTANCE_LEADER,
+    # Russian client channel names
+    "Сказать": Channel.SAY,
+    "Крик": Channel.YELL,
+    "Группа": Channel.PARTY,
+    "Лидер группы": Channel.PARTY_LEADER,
+    "Рейд": Channel.RAID,
+    "Лидер рейда": Channel.RAID_LEADER,
+    "Объявление рейда": Channel.RAID_WARNING,
+    "Гильдия": Channel.GUILD,
+    "Офицер": Channel.OFFICER,
+    "Подземелье": Channel.INSTANCE,
+    "Лидер подземелья": Channel.INSTANCE_LEADER,
+}
+
+# Map |Hchannel:XXX| hyperlink IDs to enum (used by non-EN clients)
+_HCHANNEL_MAP: dict[str, Channel] = {
+    "SAY": Channel.SAY,
+    "YELL": Channel.YELL,
+    "PARTY": Channel.PARTY,
+    "PARTY_LEADER": Channel.PARTY_LEADER,
+    "RAID": Channel.RAID,
+    "RAID_LEADER": Channel.RAID_LEADER,
+    "RAID_WARNING": Channel.RAID_WARNING,
+    "GUILD": Channel.GUILD,
+    "OFFICER": Channel.OFFICER,
+    "INSTANCE_CHAT": Channel.INSTANCE,
+    "INSTANCE_CHAT_LEADER": Channel.INSTANCE_LEADER,
 }
 
 
@@ -71,6 +98,16 @@ _RE_CHANNEL_MSG = re.compile(
     r"(.+)$"  # message text
 )
 
+# Non-EN client format: timestamp  |Hchannel:TYPE|h[LocalizedName]|h Author-Server: text
+_RE_HCHANNEL_MSG = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"\|Hchannel:(\w+)\|h\[[^\]]*\]\|h\s+"  # |Hchannel:TYPE|h[Name]|h
+    r"([^-\s:]+)"  # Author
+    r"(?:-(\S+))?"  # -Server (optional)
+    r":\s+"  # : separator
+    r"(.+)$"  # message text
+)
+
 # Whisper TO: timestamp  To [Author-Server]: text
 _RE_WHISPER_TO = re.compile(
     r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
@@ -85,42 +122,61 @@ _RE_WHISPER_FROM = re.compile(
     r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
     r"\[([^-\]]+)"  # [Author
     r"(?:-([^\]]+))?\]\s+"  # -Server]
-    r"whispers:\s+"  # whispers:
+    r"(?:whispers|шепчет):\s+"  # whispers: / шепчет:
+    r"(.+)$"  # text
+)
+
+# Whisper TO (Russian): timestamp  Кому [Author-Server]: text
+_RE_WHISPER_TO_RU = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"Кому\s+\[([^-\]]+)"  # Кому [Author
+    r"(?:-([^\]]+))?\]"  # -Server]
+    r":\s+"  # :
     r"(.+)$"  # text
 )
 
 # System message patterns to filter out
 _SYSTEM_PATTERNS = [
     re.compile(r"has joined|has left|has come online|has gone offline", re.IGNORECASE),
+    re.compile(r"присоединился|покинул|входит в игру|выходит из игры"),
     re.compile(r"^\|c[0-9a-fA-F]{8}\|H"),  # WoW item/spell links
     re.compile(r"^LOOT:"),
     re.compile(r"^You (receive|create|gain|lose|die|earned)"),
+    re.compile(r"заслужил[аи]?\s+достижение"),  # RU achievements
+    re.compile(r"получает добычу|получает предмет"),  # RU loot
 ]
+
+
+def _strip_wow_markup(text: str) -> str:
+    """Remove WoW hyperlink markup from text (|cXXXX|Hxxx|hText|h|r)."""
+    return re.sub(r"\|c[0-9a-fA-F]{8}|\|r|\|H[^|]*\|h|\|h", "", text)
 
 
 def parse_line(line: str) -> ChatMessage | None:
     """Parse a single WoW Chat Log line into a ChatMessage.
 
+    Supports both English and non-English (hyperlink-style) WoW clients.
     Returns None if the line is unparseable or a system message.
     """
-    # Try whisper TO first (has distinctive "To [" prefix)
-    m = _RE_WHISPER_TO.match(line)
-    if m:
-        text = m.group(4).strip()
-        if _is_system_message(text):
-            return None
-        return ChatMessage(
-            timestamp=m.group(1),
-            channel=Channel.WHISPER_TO,
-            author=m.group(2),
-            server=m.group(3) or "",
-            text=text,
-        )
+    # Try whisper TO (English: "To [Author]", Russian: "Кому [Author]")
+    for regex in (_RE_WHISPER_TO, _RE_WHISPER_TO_RU):
+        m = regex.match(line)
+        if m:
+            text = _strip_wow_markup(m.group(4).strip())
+            if _is_system_message(text):
+                return None
+            return ChatMessage(
+                timestamp=m.group(1),
+                channel=Channel.WHISPER_TO,
+                author=m.group(2),
+                server=m.group(3) or "",
+                text=text,
+            )
 
-    # Try whisper FROM
+    # Try whisper FROM (English: "whispers:", Russian: "шепчет:")
     m = _RE_WHISPER_FROM.match(line)
     if m:
-        text = m.group(4).strip()
+        text = _strip_wow_markup(m.group(4).strip())
         if _is_system_message(text):
             return None
         return ChatMessage(
@@ -131,7 +187,26 @@ def parse_line(line: str) -> ChatMessage | None:
             text=text,
         )
 
-    # Try standard channel message
+    # Try non-EN hyperlink format: |Hchannel:TYPE|h[Name]|h Author: text
+    m = _RE_HCHANNEL_MSG.match(line)
+    if m:
+        channel_id = m.group(2)
+        channel = _HCHANNEL_MAP.get(channel_id)
+        if channel is None:
+            return None
+
+        text = _strip_wow_markup(m.group(5).strip())
+        if _is_system_message(text):
+            return None
+        return ChatMessage(
+            timestamp=m.group(1),
+            channel=channel,
+            author=m.group(3),
+            server=m.group(4) or "",
+            text=text,
+        )
+
+    # Try standard EN channel message: [Channel] Author: text
     m = _RE_CHANNEL_MSG.match(line)
     if m:
         channel_name = m.group(2)
@@ -139,7 +214,7 @@ def parse_line(line: str) -> ChatMessage | None:
         if channel is None:
             return None  # Unknown channel (e.g., numbered channels, trade, etc.)
 
-        text = m.group(5).strip()
+        text = _strip_wow_markup(m.group(5).strip())
         if _is_system_message(text):
             return None
         return ChatMessage(

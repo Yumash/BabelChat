@@ -36,7 +36,8 @@ class AppConfig:
     chatlog_path: str = ""
 
     # Languages
-    own_language: str = "EN"
+    ui_language: str = "RU"
+    own_language: str = "RU"
     target_language: str = "EN"
 
     # Overlay
@@ -55,10 +56,10 @@ class AppConfig:
     # Channels
     channels_party: bool = True
     channels_raid: bool = True
-    channels_guild: bool = True
-    channels_say: bool = True
-    channels_whisper: bool = True
-    channels_yell: bool = True
+    channels_guild: bool = False
+    channels_say: bool = False
+    channels_whisper: bool = False
+    channels_yell: bool = False
     channels_instance: bool = True
 
     # Translation
