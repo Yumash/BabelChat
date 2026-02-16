@@ -51,10 +51,10 @@ _LINGUA_TO_DEEPL: dict[Language, str] = {
     Language.ESTONIAN: "ET",
     Language.LATVIAN: "LV",
     Language.LITHUANIAN: "LT",
-    Language.SLOVENIAN: "SL",
+    Language.SLOVENE: "SL",
     Language.SLOVAK: "SK",
     Language.INDONESIAN: "ID",
-    Language.NORWEGIAN_BOKMAL: "NB",
+    Language.BOKMAL: "NB",
 }
 
 

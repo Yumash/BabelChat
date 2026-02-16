@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
+# Icon path: works both in dev (assets/) and bundled (PyInstaller _MEIPASS)
+_ICON_CANDIDATES = [
+    Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon.ico",
+    Path(__file__).parent.parent / "assets" / "icon.ico",
+]
+
 
 def _create_default_icon() -> QIcon:
-    """Create a simple 'W' icon programmatically."""
+    """Load icon from .ico file, or generate programmatically as fallback."""
+    for path in _ICON_CANDIDATES:
+        if path.is_file():
+            return QIcon(str(path))
+
+    # Fallback: draw icon programmatically
     pixmap = QPixmap(32, 32)
     pixmap.fill(QColor(0, 0, 0, 0))
     painter = QPainter(pixmap)
@@ -29,6 +43,7 @@ class TrayIcon(QSystemTrayIcon):
     hide_overlay_requested = pyqtSignal()
     toggle_translation_requested = pyqtSignal()
     settings_requested = pyqtSignal()
+    about_requested = pyqtSignal()
     quit_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -51,6 +66,10 @@ class TrayIcon(QSystemTrayIcon):
         settings_action = QAction("Settings")
         settings_action.triggered.connect(self.settings_requested)
         self._menu.addAction(settings_action)
+
+        about_action = QAction("About")
+        about_action.triggered.connect(self.about_requested)
+        self._menu.addAction(about_action)
 
         self._menu.addSeparator()
 

@@ -1,8 +1,13 @@
-## Interface: 120000
+## Interface: 110100
 ## Title: ChatTranslatorHelper
-## Notes: Auto-enables chat logging for WoWTranslator companion app
-## Author: WoWTranslator
+## Notes: Helper addon for WoWTranslator companion app. Auto-enables chat logging so the desktop app can translate your chat in real time. Requires WoWTranslator.exe running alongside WoW.
+## Notes-ruRU: Вспомогательный аддон для WoWTranslator. Автоматически включает запись чата, чтобы десктопное приложение могло переводить чат в реальном времени. Требует запущенный WoWTranslator.exe.
+## Author: Andrey Yumashev
 ## Version: 1.0.0
+## X-License: GPL-3.0
+## X-Category: Chat & Communication
+## X-Website: https://github.com/Yumash/WoWTranslator
+## X-Credits: Made with love and support of the best WoW guild - Retro-Kettles (https://t.me/RetroKettle_WoW)
 ## SavedVariables: ChatTranslatorHelperDB
 
 Core.lua

@@ -11,9 +11,11 @@ from pathlib import Path
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -143,13 +145,16 @@ class ChatOverlay(QWidget):
     """
 
     message_received = pyqtSignal(object)  # TranslatedMessage
+    settings_requested = pyqtSignal()
+    quit_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._click_through = True
+        self._click_through = False
         self._active_filter = "All"
         self._translation_enabled = True
         self._drag_pos: QPoint | None = None
+        self._bg_opacity = 180
 
         self._setup_window()
         self._setup_ui()
@@ -203,13 +208,69 @@ class ChatOverlay(QWidget):
         title_bar.addWidget(self._toggle_btn)
 
         # Mode indicator
-        self._mode_label = QLabel("LOCKED")
+        self._mode_label = QLabel("UNLOCKED")
         self._mode_label.setStyleSheet(
-            "color: #666; font-size: 9px; padding: 2px;"
+            "color: #40FF40; font-size: 9px; padding: 2px;"
         )
         title_bar.addWidget(self._mode_label)
 
         container_layout.addLayout(title_bar)
+
+        # Toolbar (visible only in interactive/unlocked mode)
+        self._toolbar = QWidget()
+        tb_layout = QHBoxLayout(self._toolbar)
+        tb_layout.setContentsMargins(2, 0, 2, 0)
+        tb_layout.setSpacing(4)
+
+        _TB_BTN = (
+            "QPushButton { background: rgba(60,60,60,200); color: #ccc; "
+            "border: 1px solid #555; border-radius: 3px; padding: 2px 8px; font-size: 10px; }"
+            "QPushButton:hover { color: #FFD200; border-color: #FFD200; }"
+        )
+
+        settings_btn = QPushButton("\u2699 Settings")
+        settings_btn.setFixedHeight(20)
+        settings_btn.setStyleSheet(_TB_BTN)
+        settings_btn.clicked.connect(self.settings_requested.emit)
+        tb_layout.addWidget(settings_btn)
+
+        opacity_label = QLabel("Opacity:")
+        opacity_label.setStyleSheet("color: #999; font-size: 10px;")
+        tb_layout.addWidget(opacity_label)
+
+        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider.setRange(30, 255)
+        self._opacity_slider.setValue(self._bg_opacity)
+        self._opacity_slider.setFixedWidth(80)
+        self._opacity_slider.setFixedHeight(16)
+        self._opacity_slider.setStyleSheet(
+            "QSlider::groove:horizontal { height: 4px; background: #333; border-radius: 2px; }"
+            "QSlider::handle:horizontal { background: #FFD200; width: 10px; height: 10px; "
+            "margin: -3px 0; border-radius: 5px; }"
+            "QSlider::sub-page:horizontal { background: #997d00; border-radius: 2px; }"
+        )
+        self._opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        tb_layout.addWidget(self._opacity_slider)
+
+        lock_btn = QPushButton("\U0001F512 Lock")
+        lock_btn.setFixedHeight(20)
+        lock_btn.setStyleSheet(_TB_BTN)
+        lock_btn.clicked.connect(self.toggle_interactive)
+        tb_layout.addWidget(lock_btn)
+
+        quit_btn = QPushButton("\u2716 Quit")
+        quit_btn.setFixedHeight(20)
+        quit_btn.setStyleSheet(
+            "QPushButton { background: rgba(100,0,0,200); color: #FF4040; "
+            "border: 1px solid #FF4040; border-radius: 3px; padding: 2px 8px; font-size: 10px; }"
+            "QPushButton:hover { background: rgba(150,0,0,200); }"
+        )
+        quit_btn.clicked.connect(self.quit_requested.emit)
+        tb_layout.addWidget(quit_btn)
+
+        tb_layout.addStretch()
+        self._toolbar.show()
+        container_layout.addWidget(self._toolbar)
 
         # Channel filter tabs
         self._filter_bar = ChannelFilterBar()
@@ -303,6 +364,12 @@ class ChatOverlay(QWidget):
                 "border: 1px solid #FF4040; border-radius: 3px; font-size: 10px; }"
             )
 
+    def _on_opacity_changed(self, value: int) -> None:
+        self._bg_opacity = value
+        self._container.setStyleSheet(
+            f"background: rgba(0, 0, 0, {value}); border-radius: 4px;"
+        )
+
     def toggle_interactive(self) -> None:
         """Toggle between click-through and interactive mode."""
         self._click_through = not self._click_through
@@ -310,9 +377,11 @@ class ChatOverlay(QWidget):
         if self._click_through:
             self._mode_label.setText("LOCKED")
             self._mode_label.setStyleSheet("color: #666; font-size: 9px; padding: 2px;")
+            self._toolbar.hide()
         else:
             self._mode_label.setText("UNLOCKED")
             self._mode_label.setStyleSheet("color: #40FF40; font-size: 9px; padding: 2px;")
+            self._toolbar.show()
 
     def _set_click_through(self, enabled: bool) -> None:
         """Set or unset click-through mode using Win32 API."""
@@ -359,6 +428,7 @@ class ChatOverlay(QWidget):
             "y": self.y(),
             "width": self.width(),
             "height": self.height(),
+            "opacity": self._bg_opacity,
         }
         import contextlib
         with contextlib.suppress(OSError):
@@ -369,5 +439,9 @@ class ChatOverlay(QWidget):
             data = json.loads(Path(SETTINGS_FILE).read_text(encoding="utf-8"))
             self.move(data.get("x", 100), data.get("y", 100))
             self.resize(data.get("width", 450), data.get("height", 300))
+            opacity = data.get("opacity", 180)
+            self._bg_opacity = opacity
+            self._opacity_slider.setValue(opacity)
+            self._on_opacity_changed(opacity)
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
             self.move(100, 100)

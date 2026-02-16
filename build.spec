@@ -5,7 +5,11 @@ a = Analysis(
     ["app/main.py"],
     pathex=["."],
     binaries=[],
-    datas=[],
+    datas=[
+        ("assets/icon.ico", "assets"),
+        ("assets/icon.png", "assets"),
+        ("addon/ChatTranslatorHelper", "addon/ChatTranslatorHelper"),
+    ],
     hiddenimports=[
         "lingua",
         "lingua.builder",
@@ -28,6 +32,8 @@ a = Analysis(
         "app.tray",
         "app.config",
         "app.settings_dialog",
+        "app.setup_wizard",
+        "app.about_dialog",
         "app.reply_widget",
         "app.lang_selector",
         "app.hotkeys",
@@ -64,6 +70,6 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    icon=None,
+    icon="assets/icon.ico",
     onefile=True,
 )
