@@ -15,6 +15,8 @@ from lingua import Language
 from app.cache import TranslationCache
 from app.detector import ChatLanguageDetector
 from app.parser import Channel, ChatMessage, parse_line
+from app.phrasebook import lookup as phrasebook_lookup
+from app.phrasebook import lookup_abbreviation as phrasebook_abbrev
 from app.text_utils import (
     clean_message_text,
     is_empty_or_whitespace,
@@ -224,6 +226,22 @@ class TranslationPipeline:
         if is_empty_or_whitespace(cleaned_text):
             return
 
+        target_lang = self._config.target_lang
+
+        # Check abbreviations before language detection (catches short gg/ty/bb
+        # that would fail MIN_TEXT_LENGTH in the detector)
+        abbrev_hit = phrasebook_abbrev(cleaned_text, target_lang)
+        if abbrev_hit is not None:
+            result = TranslationResult(
+                original=cleaned_text, translated=abbrev_hit,
+                source_lang="", target_lang=target_lang,
+                success=True,
+            )
+            self._on_message(TranslatedMessage(
+                original=msg, translation=result,
+            ))
+            return
+
         # Detect language
         detected = self._detector.detect(cleaned_text)
         if detected is None:
@@ -236,7 +254,18 @@ class TranslationPipeline:
             self._on_message(TranslatedMessage(original=msg, translation=None))
             return
 
-        target_lang = self._config.target_lang
+        # Check phrasebook (instant, no API call)
+        phrasebook_hit = phrasebook_lookup(cleaned_text, source_lang, target_lang)
+        if phrasebook_hit is not None:
+            result = TranslationResult(
+                original=cleaned_text, translated=phrasebook_hit,
+                source_lang=source_lang, target_lang=target_lang,
+                success=True,
+            )
+            self._on_message(TranslatedMessage(
+                original=msg, translation=result, source_lang=source_lang,
+            ))
+            return
 
         # Check cache
         cached = self._cache.get(cleaned_text, source_lang, target_lang)

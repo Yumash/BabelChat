@@ -9,10 +9,13 @@ from lingua import Language, LanguageDetectorBuilder
 logger = logging.getLogger(__name__)
 
 # Short gaming phrases that shouldn't trigger detection
+# Gaming phrases that shouldn't trigger language detection.
+# NOTE: abbreviations with translations (gg, ty, brb, afk, etc.) are handled
+# by the phrasebook module — they are NOT listed here so they can reach the
+# phrasebook lookup in the pipeline.
 _SKIP_PHRASES = frozenset({
-    "gg", "wp", "gl", "hf", "kk", "ok", "ty", "np", "lol", "lmao",
-    "brb", "afk", "oom", "lfg", "lfm", "inv", "rdy", "rip", "ez",
-    "gj", "mb", "omw", "inc", "wts", "wtb", "pst", "+", "++", "+++",
+    "kk", "ok", "lol", "lmao", "rip", "ez",
+    "pst", "+", "++", "+++",
     "1", "2", "3", "go", "pull", "cc", "aoe", "dps", "heal", "tank",
     "res", "rez", "buff", "nerf", "proc", "crit", "dodge", "miss",
 })
