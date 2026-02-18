@@ -95,7 +95,7 @@ class PipelineConfig:
     })
     translation_enabled: bool = True
     db_path: str = "translations.db"
-    use_memory_reader: bool = True  # Try memory reader first, fallback to file
+    use_memory_reader: bool = True  # Reads addon buffer from WoW process memory
 
 
 class TranslationPipeline:

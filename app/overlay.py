@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
+from collections.abc import Callable
 
 from PyQt6.QtCore import QPoint, QRunnable, Qt, QThreadPool, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor, QCursor, QFont, QPainter, QPen, QTextCharFormat, QTextCursor
@@ -22,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.config import AppConfig
 from app.i18n import tr
 from app.parser import Channel
 from app.pipeline import TranslatedMessage
@@ -63,8 +63,6 @@ CHANNEL_PREFIXES: dict[Channel, str] = {
 }
 
 TRANSLATION_COLOR = "#FFD200"  # Gold for translated text
-
-SETTINGS_FILE = "overlay_settings.json"
 
 
 class ChannelFilterBar(QWidget):
@@ -189,12 +187,13 @@ class ChatOverlay(QWidget):
     settings_requested = pyqtSignal()
     quit_requested = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._config = config
         self._active_filter = "All"
         self._translation_enabled = True
         self._drag_pos: QPoint | None = None
-        self._bg_opacity = 180
+        self._bg_opacity = config.overlay_opacity
         self._resize_edge: str | None = None
         self._translator: TranslatorService | None = None
         self._target_lang = "EN"
@@ -205,7 +204,10 @@ class ChatOverlay(QWidget):
 
         self._setup_window()
         self._setup_ui()
-        self._load_settings()
+        self.move(config.overlay_x, config.overlay_y)
+        self.resize(config.overlay_width, config.overlay_height)
+        self._opacity_slider.setValue(config.overlay_opacity)
+        self._on_opacity_changed(config.overlay_opacity)
 
         self.message_received.connect(self._on_message)
 
@@ -245,6 +247,14 @@ class ChatOverlay(QWidget):
         )
         title_bar.addWidget(title_label)
         title_bar.addStretch()
+
+        # WoW connection status
+        self._wow_status = QLabel("WoW: ?")
+        self._wow_status.setFixedHeight(20)
+        self._wow_status.setStyleSheet(
+            "color: #888; font-size: 9px; padding: 0 4px;"
+        )
+        title_bar.addWidget(self._wow_status)
 
         # Translation toggle
         self._toggle_btn = QPushButton("TR: ON")
@@ -614,6 +624,42 @@ class ChatOverlay(QWidget):
 
     # -- Reply translator --
 
+    def set_wow_status_checker(
+        self, checker: Callable[[], str],
+    ) -> None:
+        """Set a callable that returns WoW connection status string.
+
+        Called every 2 seconds to update the status indicator.
+        Expected return values: "attached", "searching", "offline".
+        """
+        self._wow_checker = checker
+        self._wow_timer = QTimer(self)
+        self._wow_timer.timeout.connect(self._update_wow_status)
+        self._wow_timer.start(2000)
+        # Initial update
+        self._update_wow_status()
+
+    def _update_wow_status(self) -> None:
+        """Update WoW connection status label."""
+        if not hasattr(self, "_wow_checker"):
+            return
+        status = self._wow_checker()
+        if status == "attached":
+            self._wow_status.setText("WoW: \u2714")
+            self._wow_status.setStyleSheet(
+                "color: #40FF40; font-size: 9px; padding: 0 4px;"
+            )
+        elif status == "searching":
+            self._wow_status.setText("WoW: ...")
+            self._wow_status.setStyleSheet(
+                "color: #FFD200; font-size: 9px; padding: 0 4px;"
+            )
+        else:
+            self._wow_status.setText("WoW: \u2716")
+            self._wow_status.setStyleSheet(
+                "color: #888; font-size: 9px; padding: 0 4px;"
+            )
+
     def set_translator(self, translator: TranslatorService, target_lang: str) -> None:
         """Provide the translator service and target language for reply translation."""
         self._translator = translator
@@ -760,30 +806,22 @@ class ChatOverlay(QWidget):
     def mouseReleaseEvent(self, event: object) -> None:
         self._drag_pos = None
         self._resize_edge = None
-        self._save_settings()
+        self._save_overlay_state()
 
     # -- Settings persistence --
 
-    def _save_settings(self) -> None:
-        data = {
-            "x": self.x(),
-            "y": self.y(),
-            "width": self.width(),
-            "height": self.height(),
-            "opacity": self._bg_opacity,
-        }
-        import contextlib
-        with contextlib.suppress(OSError):
-            Path(SETTINGS_FILE).write_text(json.dumps(data), encoding="utf-8")
+    def _save_overlay_state(self) -> None:
+        """Save overlay position, size, and opacity to AppConfig."""
+        self._config.overlay_x = self.x()
+        self._config.overlay_y = self.y()
+        self._config.overlay_width = self.width()
+        self._config.overlay_height = self.height()
+        self._config.overlay_opacity = self._bg_opacity
+        self._config.save()
 
-    def _load_settings(self) -> None:
-        try:
-            data = json.loads(Path(SETTINGS_FILE).read_text(encoding="utf-8"))
-            self.move(data.get("x", 100), data.get("y", 100))
-            self.resize(data.get("width", 450), data.get("height", 300))
-            opacity = data.get("opacity", 180)
-            self._bg_opacity = opacity
-            self._opacity_slider.setValue(opacity)
-            self._on_opacity_changed(opacity)
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            self.move(100, 100)
+    def apply_settings(self, config: AppConfig) -> None:
+        """Apply settings from an updated AppConfig (e.g. after settings dialog)."""
+        self._config = config
+        self._bg_opacity = config.overlay_opacity
+        self._opacity_slider.setValue(config.overlay_opacity)
+        self._on_opacity_changed(config.overlay_opacity)

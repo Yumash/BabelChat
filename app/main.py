@@ -13,12 +13,12 @@ from PyQt6.QtWidgets import QApplication
 
 from app.about_dialog import AboutDialog
 from app.config import AppConfig, resolve_chatlog_path
+from app.hotkeys import GlobalHotkeyManager
 from app.i18n import tr
 from app.overlay import ChatOverlay
 from app.parser import Channel
 from app.pipeline import PipelineConfig, TranslationPipeline
 from app.settings_dialog import SettingsDialog
-from app.hotkeys import GlobalHotkeyManager
 from app.translator import TranslatorService
 from app.tray import TrayIcon
 
@@ -151,7 +151,7 @@ def main() -> int:
             break
 
     # Create overlay
-    overlay = ChatOverlay()
+    overlay = ChatOverlay(config)
     overlay.update_channel_filters(_enabled_filter_names(config))
 
     # Provide translator for the reply panel
@@ -174,6 +174,7 @@ def main() -> int:
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             config = dialog.get_config()
             overlay.update_channel_filters(_enabled_filter_names(config))
+            overlay.apply_settings(config)
 
     tray.settings_requested.connect(open_settings)
     overlay.settings_requested.connect(open_settings)
@@ -214,6 +215,20 @@ def main() -> int:
     overlay.load_history(history)
 
     pipeline_thread.start()
+
+    # WoW connection status checker for overlay
+    def wow_status_checker() -> str:
+        pipeline = pipeline_thread.pipeline
+        if pipeline is None:
+            return "searching"
+        mw = pipeline._memory_watcher
+        if mw is None:
+            return "offline"
+        if mw.is_attached:
+            return "attached"
+        return "searching"
+
+    overlay.set_wow_status_checker(wow_status_checker)
 
     # Graceful shutdown
     def shutdown() -> None:

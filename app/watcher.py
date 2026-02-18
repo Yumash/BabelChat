@@ -13,7 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 2.0  # seconds
+POLL_INTERVAL = 1.0  # seconds (addon flushes chat log every 5s)
 
 
 class ChatLogWatcher:

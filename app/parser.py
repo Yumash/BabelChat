@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from enum import Enum
 
@@ -231,3 +232,65 @@ def parse_line(line: str) -> ChatMessage | None:
 def _is_system_message(text: str) -> bool:
     """Check if the message text matches known system message patterns."""
     return any(p.search(text) for p in _SYSTEM_PATTERNS)
+
+
+# Map addon CHAT_MSG_* event channel names to Channel enum
+_ADDON_CHANNEL_MAP: dict[str, Channel] = {
+    "SAY": Channel.SAY,
+    "YELL": Channel.YELL,
+    "PARTY": Channel.PARTY,
+    "PARTY_LEADER": Channel.PARTY_LEADER,
+    "RAID": Channel.RAID,
+    "RAID_LEADER": Channel.RAID_LEADER,
+    "RAID_WARNING": Channel.RAID_WARNING,
+    "GUILD": Channel.GUILD,
+    "OFFICER": Channel.OFFICER,
+    "WHISPER": Channel.WHISPER_FROM,
+    "WHISPER_INFORM": Channel.WHISPER_TO,
+    "INSTANCE_CHAT": Channel.INSTANCE,
+    "INSTANCE_CHAT_LEADER": Channel.INSTANCE_LEADER,
+}
+
+
+def parse_addon_line(line: str) -> tuple[ChatMessage | None, int]:
+    """Parse a line from the addon's memory buffer.
+
+    Format: SEQ|CHANNEL|Author-Server|MessageText
+
+    Returns (ChatMessage or None, sequence_number).
+    """
+    parts = line.split("|", 3)
+    if len(parts) < 4:
+        return None, 0
+
+    seq_str, channel_str, author_full, text = parts
+
+    try:
+        seq = int(seq_str)
+    except ValueError:
+        return None, 0
+
+    channel = _ADDON_CHANNEL_MAP.get(channel_str)
+    if channel is None:
+        return None, seq
+
+    # Split author into name and server
+    if "-" in author_full:
+        author, server = author_full.split("-", 1)
+    else:
+        author, server = author_full, ""
+
+    text = _strip_wow_markup(text.strip())
+    if _is_system_message(text):
+        return None, seq
+
+    t = time.localtime()
+    timestamp = f"{t.tm_mon}/{t.tm_mday} {t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.000"
+
+    return ChatMessage(
+        timestamp=timestamp,
+        channel=channel,
+        author=author,
+        server=server,
+        text=text,
+    ), seq
