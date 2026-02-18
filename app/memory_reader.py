@@ -18,6 +18,7 @@ import contextlib
 import ctypes
 import ctypes.wintypes
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -228,7 +229,7 @@ class WoWAddonBufReader:
         """Search WoW's memory for the __WCT_BUF__ marker.
 
         If previously found in a specific region, search that region first.
-        Falls back to full memory scan.
+        Falls back to full memory scan via pymem.pattern.
         """
         if not self._pm:
             return False
@@ -243,10 +244,32 @@ class WoWAddonBufReader:
                 )
                 return True
 
-        # Full scan
-        logger.info("Scanning WoW memory for addon buffer marker...")
+        # Full scan using pymem's built-in pattern scanner
+        logger.info("Scanning WoW memory for addon buffer marker (pymem)...")
+        try:
+            import pymem.pattern
+            # pymem uses regex internally — escape our marker pattern
+            pattern = re.escape(MARKER_START)
+            addr = pymem.pattern.pattern_scan_all(
+                self._pm.process_handle,
+                pattern,
+                return_multiple=False,
+            )
+            if addr:
+                self._buf_addr = addr
+                logger.info("Marker found at 0x%X (pymem scan)", addr)
+                return True
+            else:
+                logger.warning("Marker NOT found (pymem full scan)")
+                return False
+        except Exception as e:
+            logger.warning("pymem pattern_scan_all failed: %s", e)
+
+        # Fallback: manual scan
+        logger.info("Falling back to manual memory scan...")
         regions = self._get_memory_regions()
-        for base, size in regions:
+        logger.info("Scanning %d regions...", len(regions))
+        for i, (base, size) in enumerate(regions):
             addr = self._search_region_for_marker(base, size)
             if addr:
                 self._buf_addr = addr
@@ -256,7 +279,10 @@ class WoWAddonBufReader:
                     addr, base, size,
                 )
                 return True
+            if (i + 1) % 500 == 0:
+                logger.info("Scan progress: %d/%d regions", i + 1, len(regions))
 
+        logger.warning("Marker NOT found after manual scan of %d regions", len(regions))
         return False
 
     def _search_region_for_marker(self, base: int, size: int) -> int:
@@ -271,7 +297,11 @@ class WoWAddonBufReader:
             read_size = min(chunk_size, size - offset)
             try:
                 data = self._pm.read_bytes(base + offset, read_size)
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    "Read failed at 0x%X+0x%X (%d bytes): %s",
+                    base, offset, read_size, e,
+                )
                 break
 
             idx = data.find(MARKER_START)
@@ -336,18 +366,40 @@ class WoWAddonBufReader:
 
     def _deliver_new_messages(self, content: str) -> None:
         """Parse buffer content and deliver messages with seq > last_seq."""
-        for line in content.splitlines():
-            line = line.strip()
-            if not line:
+        lines = [l.strip() for l in content.splitlines() if l.strip()]
+        if not lines:
+            return
+
+        # Detect seq reset: after /reload, addon restarts seq from 1
+        # while we may have last_seq=50 from old buffer.
+        # Find the max seq in current buffer to detect this.
+        max_seq_in_buf = 0
+        for line in lines:
+            parts = line.split("|", 1)
+            if parts:
+                try:
+                    s = int(parts[0])
+                    if s > max_seq_in_buf:
+                        max_seq_in_buf = s
+                except ValueError:
+                    pass
+
+        if max_seq_in_buf > 0 and max_seq_in_buf < self._last_seq:
+            logger.info(
+                "Seq reset detected (buf max=%d, last_seq=%d) — resetting tracker",
+                max_seq_in_buf, self._last_seq,
+            )
+            self._last_seq = 0
+
+        new_count = 0
+        for line in lines:
+            # Format: SEQ|RAW|formatted_chat_line  (from AddMessage hook)
+            #     or: SEQ|CHANNEL|Author|Text       (legacy format)
+            parts = line.split("|", 2)
+            if len(parts) < 3:
                 continue
 
-            # Parse: SEQ|CHANNEL|Author-Server|Text
-            parts = line.split("|", 3)
-            if len(parts) < 4:
-                continue
-
-            seq_str, channel, author, text = parts
-
+            seq_str = parts[0]
             try:
                 seq = int(seq_str)
             except ValueError:
@@ -357,12 +409,33 @@ class WoWAddonBufReader:
                 continue
 
             self._last_seq = seq
+            new_count += 1
 
-            # Convert to synthetic log line for parse_line()
-            log_line = _make_synthetic_log_line(channel, author, text)
-            if log_line:
-                logger.debug("Addon msg #%d: %s", seq, log_line[:80])
+            kind = parts[1]
+            payload = parts[2]
+
+            if kind == "RAW":
+                # AddMessage hook: payload is the formatted chat line
+                # Add a timestamp prefix to make it look like a log line
+                t = time.localtime()
+                ts = f"{t.tm_mon}/{t.tm_mday} {t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.000"
+                log_line = f"{ts}  {payload}"
+                logger.info("Addon raw #%d: %s", seq, log_line[:200])
                 self._on_new_line(log_line)
+            else:
+                # Legacy format: SEQ|CHANNEL|Author|Text
+                legacy_parts = line.split("|", 3)
+                if len(legacy_parts) >= 4:
+                    channel = legacy_parts[1]
+                    author = legacy_parts[2]
+                    text = legacy_parts[3]
+                    log_line = _make_synthetic_log_line(channel, author, text)
+                    if log_line:
+                        logger.debug("Addon msg #%d: %s", seq, log_line[:80])
+                        self._on_new_line(log_line)
+
+        if new_count > 0:
+            logger.info("Delivered %d new messages (last_seq=%d)", new_count, self._last_seq)
 
     # ------------------------------------------------------------------
     # Low-level memory access
@@ -400,7 +473,7 @@ class WoWAddonBufReader:
             if mbi.RegionSize == 0:
                 address += 0x1000
 
-        logger.debug("Found %d readable memory regions", len(regions))
+        logger.info("Found %d readable memory regions", len(regions))
         return regions
 
 

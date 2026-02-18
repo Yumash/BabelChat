@@ -55,6 +55,13 @@ local function EnableLoggingAndFlush()
         Print("Chat logging already active.")
     end
     StartFlushTimer()
+
+    -- Initialize memory buffer with markers so the companion app can find it
+    -- immediately (before any chat message arrives).
+    if not ChatTranslatorHelperDB.wctbuf or ChatTranslatorHelperDB.wctbuf == "" then
+        ChatTranslatorHelperDB.wctbuf = "__WCT_BUF__\n__WCT_END__"
+        Print("Memory buffer initialized for companion app.")
+    end
 end
 
 -- Init on ADDON_LOADED (fires on both login and /reload)
@@ -151,49 +158,89 @@ end
 -- __WCT_END__ allow the companion to locate the buffer.
 --
 -- Format: __WCT_BUF__<lines>__WCT_END__
--- Each line: SEQ|CHANNEL|Author-Server|MessageText
+-- Each line: SEQ|RAW|formatted_chat_line
+--
+-- WoW TWW marks CHAT_MSG_* event args as "secret" (tainted).
+-- Even ChatFrame_AddMessageEventFilter receives tainted strings.
+-- The ONLY safe path: hook ChatFrame:AddMessage() which receives
+-- the final formatted (and fully detainted) display string.
+-- The companion app parses channel/author/text from this string
+-- (same format as WoWChatLog.txt lines).
 
 local MSG_LIMIT = 50  -- ring buffer size
 local wctBuf = {}      -- accumulator table
 local wctSeq = 0       -- monotonic sequence counter
 
--- Chat events to capture
-local CHAT_EVENTS = {
-    "CHAT_MSG_SAY",
-    "CHAT_MSG_YELL",
-    "CHAT_MSG_PARTY",
-    "CHAT_MSG_PARTY_LEADER",
-    "CHAT_MSG_RAID",
-    "CHAT_MSG_RAID_LEADER",
-    "CHAT_MSG_RAID_WARNING",
-    "CHAT_MSG_GUILD",
-    "CHAT_MSG_OFFICER",
-    "CHAT_MSG_WHISPER",
-    "CHAT_MSG_WHISPER_INFORM",
-    "CHAT_MSG_INSTANCE_CHAT",
-    "CHAT_MSG_INSTANCE_CHAT_LEADER",
-}
-
-local wctFrame = CreateFrame("Frame")
-for _, evt in ipairs(CHAT_EVENTS) do
-    wctFrame:RegisterEvent(evt)
+-- Strip WoW visual markup but KEEP hyperlink structure for parsing.
+-- Removes: colors |cXXXXXXXX / |r, textures |T..|t, atlas |A..|a
+-- Keeps: |Hchannel:TYPE|h[Name]|h and |Hplayer:Name|h[Name]|h
+-- so the companion app can parse channel/author from hyperlinks.
+local function StripMarkup(text)
+    if not text then return "" end
+    local s = text
+    -- Remove |cXXXXXXXX (color start)
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", "")
+    -- Remove |r (color end)
+    s = s:gsub("|r", "")
+    -- Remove texture escapes |T...|t
+    s = s:gsub("|T.-|t", "")
+    -- Remove atlas |A.-|a
+    s = s:gsub("|A.-|a", "")
+    -- Remove |K (BN name replacement) and |k
+    s = s:gsub("|K.-|k", "")
+    return strtrim(s)
 end
 
-wctFrame:SetScript("OnEvent", function(self, event, msg, author, ...)
-    if not msg or not author then return end
-
-    wctSeq = wctSeq + 1
-    -- Channel name: strip CHAT_MSG_ prefix
-    local channel = event:gsub("^CHAT_MSG_", "")
-
-    local entry = wctSeq .. "|" .. channel .. "|" .. author .. "|" .. msg
-    tinsert(wctBuf, entry)
-
-    -- Trim to ring buffer size
-    while #wctBuf > MSG_LIMIT do
-        tremove(wctBuf, 1)
-    end
-
+local function RebuildBuffer()
     -- Rebuild contiguous string with markers for ReadProcessMemory
     ChatTranslatorHelperDB.wctbuf = "__WCT_BUF__" .. table.concat(wctBuf, "\n") .. "\n__WCT_END__"
+end
+
+-- Hook AddMessage on all chat frames to capture formatted lines.
+-- Uses hooksecurefunc so we run AFTER the original, preserving
+-- WoW's secure/taint execution path (no "secret string" errors).
+local function HookChatFrame(cf)
+    if not cf or cf._wctHooked then return end
+    if not cf.AddMessage then return end
+
+    hooksecurefunc(cf, "AddMessage", function(self, text, r, g, b, ...)
+        -- pcall so any error in our code never breaks WoW chat
+        pcall(function()
+            if not text or text == "" then return end
+
+            -- Strip color codes for clean text
+            local clean = StripMarkup(text)
+            if not clean or clean == "" then return end
+
+            wctSeq = wctSeq + 1
+            local entry = wctSeq .. "|RAW|" .. clean
+            tinsert(wctBuf, entry)
+
+            while #wctBuf > MSG_LIMIT do
+                tremove(wctBuf, 1)
+            end
+
+            RebuildBuffer()
+        end)
+    end)
+    cf._wctHooked = true
+end
+
+-- Hook default chat frames (1-10)
+for i = 1, 10 do
+    local cf = _G["ChatFrame" .. i]
+    if cf then
+        HookChatFrame(cf)
+    end
+end
+-- Also hook any temporary chat frames created later
+hooksecurefunc("FCF_OpenTemporaryWindow", function(...)
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf and not cf._wctHooked then
+            HookChatFrame(cf)
+        end
+    end
 end)
+
+Print("Chat frame hooks active for companion app.")

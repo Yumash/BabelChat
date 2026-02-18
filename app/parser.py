@@ -90,21 +90,25 @@ class ChatMessage:
 # 2/15 21:30:45.123  [Артас-Азурегос] whispers: incoming text
 
 # Standard channel message: timestamp  [Channel] Author-Server: text
+# Also supports [Channel] [Author-Server]: text (RU client AddMessage format)
 _RE_CHANNEL_MSG = re.compile(
     r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
     r"\[([^\]]+)\]\s+"  # [Channel]
-    r"([^-\s:]+)"  # Author
-    r"(?:-(\S+))?"  # -Server (optional)
+    r"\[?([^-\s:\]]+)"  # Author (optional [ bracket)
+    r"(?:-([^\s:\]]+))?\]?"  # -Server (optional, optional ] bracket)
     r":\s+"  # : separator
     r"(.+)$"  # message text
 )
 
 # Non-EN client format: timestamp  |Hchannel:TYPE|h[LocalizedName]|h Author-Server: text
+# Author may be wrapped in |Hplayer:...|h[Author-Server]|h from AddMessage hook
 _RE_HCHANNEL_MSG = re.compile(
     r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
     r"\|Hchannel:(\w+)\|h\[[^\]]*\]\|h\s+"  # |Hchannel:TYPE|h[Name]|h
-    r"([^-\s:]+)"  # Author
-    r"(?:-(\S+))?"  # -Server (optional)
+    r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h wrapper
+    r"\[?([^-\s:\]|]+)"  # Author (allow optional [ bracket, stop at |)
+    r"(?:-([^\s:\]|]+))?"  # -Server (optional)
+    r"\]?(?:\|h)?"  # optional ] and |h close
     r":\s+"  # : separator
     r"(.+)$"  # message text
 )
@@ -119,10 +123,13 @@ _RE_WHISPER_TO = re.compile(
 )
 
 # Whisper FROM: timestamp  [Author-Server] whispers: text
+# Also handles |Hplayer:...|h[Author]|h wrapper from AddMessage
 _RE_WHISPER_FROM = re.compile(
     r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"\[([^-\]]+)"  # [Author
-    r"(?:-([^\]]+))?\]\s+"  # -Server]
+    r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
+    r"\[([^-\]|]+)"  # [Author (stop at - ] or |)
+    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"(?:\|h)?\s+"  # optional |h close
     r"(?:whispers|шепчет):\s+"  # whispers: / шепчет:
     r"(.+)$"  # text
 )
@@ -133,6 +140,57 @@ _RE_WHISPER_TO_RU = re.compile(
     r"Кому\s+\[([^-\]]+)"  # Кому [Author
     r"(?:-([^\]]+))?\]"  # -Server]
     r":\s+"  # :
+    r"(.+)$"  # text
+)
+
+# Say/Yell from AddMessage hook (no [Channel] prefix, uses verb):
+# Player: |Hplayer:Name-Server:flags|h[Name-Server]|h говорит: text
+# NPC:    NPC Name говорит: text  (no hyperlink, name may have spaces)
+_SAY_YELL_VERB_MAP: dict[str, Channel] = {
+    "says": Channel.SAY,
+    "yells": Channel.YELL,
+    "говорит": Channel.SAY,
+    "кричит": Channel.YELL,
+}
+# Player format: |Hplayer:...|h[Name-Server]|h verb: text
+_RE_SAY_YELL_PLAYER = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"\|Hplayer:[^|]*\|h"  # |Hplayer:...|h
+    r"\[([^-\]|]+)"  # [Author
+    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\|h\s+"  # |h + space
+    r"(says|yells|говорит|кричит):\s+"  # verb
+    r"(.+)$"  # text
+)
+# NPC/plain format: Name verb: text (name = everything before verb)
+_RE_SAY_YELL_PLAIN = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"(.+?)\s+"  # Author (non-greedy, may have spaces)
+    r"(says|yells|говорит|кричит):\s+"  # verb
+    r"(.+)$"  # text
+)
+
+# Whisper TO (RU AddMessage): "Вы шепчете [Name]: text"
+# Also handles |3-2(|Kj4|k) BattleNet format
+_RE_WHISPER_TO_ADDMSG = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"(?:Вы шепчете|You whisper)\s+"  # RU/EN prefix
+    r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
+    r"\[?([^-\]|:]+)"  # Author (flexible)
+    r"(?:-([^\]|:]+))?\]?"  # -Server (optional)
+    r"(?:\|h)?:\s+"  # optional |h, then : separator
+    r"(.+)$"  # text
+)
+
+# Whisper FROM (RU AddMessage): "[Fury] шепчет: text"
+# Also: |Hplayer:...|h[Name]|h шепчет: text
+_RE_WHISPER_FROM_ADDMSG = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
+    r"\[([^-\]|]+)"  # [Author
+    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"(?:\|h)?\s+"  # optional |h
+    r"(?:whispers|шепчет):\s+"  # verb
     r"(.+)$"  # text
 )
 
@@ -225,6 +283,66 @@ def parse_line(line: str) -> ChatMessage | None:
             server=m.group(4) or "",
             text=text,
         )
+
+    # Try AddMessage whisper formats (Вы шепчете / You whisper)
+    m = _RE_WHISPER_TO_ADDMSG.match(line)
+    if m:
+        text = _strip_wow_markup(m.group(4).strip())
+        if _is_system_message(text):
+            return None
+        return ChatMessage(
+            timestamp=m.group(1),
+            channel=Channel.WHISPER_TO,
+            author=m.group(2),
+            server=m.group(3) or "",
+            text=text,
+        )
+
+    m = _RE_WHISPER_FROM_ADDMSG.match(line)
+    if m:
+        text = _strip_wow_markup(m.group(4).strip())
+        if _is_system_message(text):
+            return None
+        return ChatMessage(
+            timestamp=m.group(1),
+            channel=Channel.WHISPER_FROM,
+            author=m.group(2),
+            server=m.group(3) or "",
+            text=text,
+        )
+
+    # Try Say/Yell player format: |Hplayer:...|h[Name]|h говорит: text
+    m = _RE_SAY_YELL_PLAYER.match(line)
+    if m:
+        verb = m.group(4).lower()
+        channel = _SAY_YELL_VERB_MAP.get(verb)
+        if channel:
+            text = _strip_wow_markup(m.group(5).strip())
+            if not _is_system_message(text):
+                return ChatMessage(
+                    timestamp=m.group(1),
+                    channel=channel,
+                    author=m.group(2),
+                    server=m.group(3) or "",
+                    text=text,
+                )
+
+    # Try Say/Yell plain format: NPC Name говорит: text
+    m = _RE_SAY_YELL_PLAIN.match(line)
+    if m:
+        verb = m.group(3).lower()
+        channel = _SAY_YELL_VERB_MAP.get(verb)
+        if channel:
+            text = _strip_wow_markup(m.group(4).strip())
+            if not _is_system_message(text):
+                # Author may have spaces (NPC names); no server
+                return ChatMessage(
+                    timestamp=m.group(1),
+                    channel=channel,
+                    author=m.group(2).strip(),
+                    server="",
+                    text=text,
+                )
 
     return None
 

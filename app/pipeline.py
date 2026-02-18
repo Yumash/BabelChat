@@ -186,7 +186,7 @@ class TranslationPipeline:
         logger.debug("New line: %s", line[:120])
         msg = parse_line(line)
         if msg is None:
-            logger.debug("Parse returned None")
+            logger.info("Parse returned None for: %s", line[:150])
             return
 
         logger.info("Parsed: [%s] %s: %s", msg.channel.value, msg.author, msg.text[:60])
