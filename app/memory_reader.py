@@ -711,6 +711,14 @@ class WoWAddonBufReader:
             kind = parts[1]
             payload = parts[2]
 
+            # Sanitize: Lua strings may contain embedded \x00 bytes from
+            # taint-corrupted GetMessageInfo() results.  Truncate at first
+            # null byte and strip trailing non-printable characters.
+            nul_pos = payload.find("\x00")
+            if nul_pos != -1:
+                payload = payload[:nul_pos]
+            payload = payload.rstrip("\x00\x01\x02\x03\x04\x05\x06\x07\x08")
+
             if kind == "RAW":
                 # Log ALL raw messages to file for debugging
                 try:

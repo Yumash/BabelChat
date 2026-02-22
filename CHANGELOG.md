@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## [1.0.5] — 2026-02-23
+
+### Fixed / Исправлено
+- Fixed garbled binary characters (null bytes, raw memory data) appearing in translated messages — GetMessageInfo() can return strings with embedded \x00 bytes from taint corruption; now truncated at first null byte in both addon and companion
+- Addon: pcall-wrapped string.find for null byte detection (safe on secret values)
+- Companion: defensive payload sanitization strips null bytes and trailing control characters
+
 ## [1.0.4] — 2026-02-22
 
 ### Fixed / Исправлено

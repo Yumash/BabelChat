@@ -3,7 +3,7 @@
 ## Notes: Helper addon for WoWTranslator companion app. Auto-enables chat logging so the desktop app can translate your chat in real time. Requires WoWTranslator.exe running alongside WoW.
 ## Notes-ruRU: Вспомогательный аддон для WoWTranslator. Автоматически включает запись чата, чтобы десктопное приложение могло переводить чат в реальном времени. Требует запущенный WoWTranslator.exe.
 ## Author: Andrey Yumashev
-## Version: 1.0.4
+## Version: 1.0.5
 ## X-License: Apache-2.0
 ## X-Category: Chat & Communication
 ## X-Website: https://github.com/Yumash/WoWTranslator

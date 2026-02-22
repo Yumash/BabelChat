@@ -169,6 +169,15 @@ local function PollChatFrames()
                         pcall(function()
                             local text = cf:GetMessageInfo(idx)
                             if text then
+                                -- Try to strip embedded null bytes (taint
+                                -- corruption).  string.find may crash on
+                                -- secret values, so wrap in pcall and fall
+                                -- through to raw text if it fails —
+                                -- companion sanitizes on its side too.
+                                local ok, nulPos = pcall(string.find, text, "\0", 1, true)
+                                if ok and nulPos then
+                                    text = text:sub(1, nulPos - 1)
+                                end
                                 wctSeq = wctSeq + 1
                                 AddEntry(wctSeq .. "|RAW|" .. text)
                             end
