@@ -138,24 +138,18 @@ local function PollChatFrames()
                     frameMessageCount[i] = numMsgs
                 elseif numMsgs > lastSeen then
                     for idx = lastSeen + 1, numMsgs do
+                        -- In TWW 12.0, GetMessageInfo may return Secret
+                        -- Values.  ANY operation on a secret (comparison,
+                        -- table indexing, even concat result used as table
+                        -- key) can raise a taint error.  So we do the
+                        -- absolute minimum: concat seq + text into a single
+                        -- string and AddEntry.  No dedup, no checks —
+                        -- companion handles all of that.
                         pcall(function()
                             local text = cf:GetMessageInfo(idx)
                             if text then
-                                -- NO comparisons on text (secret value).
-                                -- Concat is allowed for secrets — use it to
-                                -- build a dedup key.  The result of concat is
-                                -- a new regular string, safe to compare/index.
-                                local key = "K" .. text
-                                if not recentTexts[key] then
-                                    recentTexts[key] = true
-                                    tinsert(recentTextsList, key)
-                                    while #recentTextsList > DEDUP_LIMIT do
-                                        local old = tremove(recentTextsList, 1)
-                                        recentTexts[old] = nil
-                                    end
-                                    wctSeq = wctSeq + 1
-                                    AddEntry(wctSeq .. "|RAW|" .. text)
-                                end
+                                wctSeq = wctSeq + 1
+                                AddEntry(wctSeq .. "|RAW|" .. text)
                             end
                         end)
                     end

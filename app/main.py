@@ -135,6 +135,9 @@ def _enabled_filter_names(config: AppConfig) -> set[str]:
     return names
 
 
+_console_initialized = False
+
+
 def _setup_console(visible: bool) -> None:
     """Show or hide a debug console window (Windows only).
 
@@ -143,8 +146,9 @@ def _setup_console(visible: bool) -> None:
     stdout/stderr so that logging output appears there.
     Also switches all logging to DEBUG level.
     """
+    global _console_initialized
     kernel32 = ctypes.windll.kernel32
-    if visible:
+    if visible and not _console_initialized:
         kernel32.AllocConsole()
         # Redirect Python stdout/stderr to the new console
         sys.stdout = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
@@ -158,6 +162,7 @@ def _setup_console(visible: bool) -> None:
         root.setLevel(logging.DEBUG)
         for h in root.handlers:
             h.setLevel(logging.DEBUG)
+        _console_initialized = True
     hwnd = kernel32.GetConsoleWindow()
     if hwnd:
         ctypes.windll.user32.ShowWindow(hwnd, 1 if visible else 0)
@@ -214,6 +219,7 @@ def main() -> int:
 
     def open_settings() -> None:
         nonlocal config
+        old_console = config.show_debug_console
         dialog = SettingsDialog(config)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             config = dialog.get_config()
@@ -222,6 +228,9 @@ def main() -> int:
             # Propagate language/channel settings to the pipeline thread
             new_pipeline_config = _build_pipeline_config(config)
             pipeline_thread.update_config(new_pipeline_config)
+            # Toggle debug console if setting changed
+            if config.show_debug_console != old_console:
+                _setup_console(config.show_debug_console)
 
     tray.settings_requested.connect(open_settings)
     overlay.settings_requested.connect(open_settings)

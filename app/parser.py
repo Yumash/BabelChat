@@ -45,6 +45,7 @@ _CHANNEL_MAP: dict[str, Channel] = {
     "Рейд": Channel.RAID,
     "Лидер рейда": Channel.RAID_LEADER,
     "Объявление рейда": Channel.RAID_WARNING,
+    "Объявление рейду": Channel.RAID_WARNING,
     "Гильдия": Channel.GUILD,
     "Офицер": Channel.OFFICER,
     "Подземелье": Channel.INSTANCE,
@@ -109,6 +110,21 @@ _RE_HCHANNEL_MSG = re.compile(
     r"\[?([^-\s:\]|]+)"  # Author (allow optional [ bracket, stop at |)
     r"(?:-([^\s:\]|]+))?"  # -Server (optional)
     r"\]?(?:\|h)?"  # optional ] and |h close
+    r":\s+"  # : separator
+    r"(.+)$"  # message text
+)
+
+# Bracket channel + player hyperlink format (RU scrollback):
+# timestamp  [Объявление рейду] |Hplayer:Name-Server:flags:TYPE:|h[Name-Server]|h: text
+# This format appears in ChatFrame scrollback for channels like Raid Warning
+# where the channel name is localized in brackets, not as |Hchannel:...|h.
+_RE_BRACKET_HPLAYER_MSG = re.compile(
+    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"\[([^\]]+)\]\s+"  # [Channel Name]
+    r"\|Hplayer:[^|]*\|h"  # |Hplayer:...|h wrapper
+    r"\[([^-\]|]+)"  # [Author
+    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\|h"  # closing |h
     r":\s+"  # : separator
     r"(.+)$"  # message text
 )
@@ -232,12 +248,20 @@ def _clean_text(raw_text: str) -> str | None:
     return text
 
 
+_RE_COLOR_CODES = re.compile(r"\|c[0-9a-fA-F]{8}|\|r")
+
+
 def parse_line(line: str) -> ChatMessage | None:
     """Parse a single WoW Chat Log line into a ChatMessage.
 
     Supports both English and non-English (hyperlink-style) WoW clients.
     Returns None if the line is unparseable or a system message.
     """
+    # Strip inline color codes (|cXXXXXXXX and |r) but keep hyperlinks
+    # (|Hchannel:...|h, |Hplayer:...|h).  Addon may send raw markup with
+    # color-coded player names like [|cff3fc7ebName-Server|r].
+    line = _RE_COLOR_CODES.sub("", line)
+
     # Try whisper TO (English: "To [Author]", Russian: "Кому [Author]")
     for regex in (_RE_WHISPER_TO, _RE_WHISPER_TO_RU):
         m = regex.match(line)
@@ -285,6 +309,22 @@ def parse_line(line: str) -> ChatMessage | None:
             server=m.group(4) or "",
             text=text,
         )
+
+    # Try bracket channel + player hyperlink: [Channel] |Hplayer:...|h[Name]|h: text
+    m = _RE_BRACKET_HPLAYER_MSG.match(line)
+    if m:
+        channel_name = m.group(2)
+        channel = _CHANNEL_MAP.get(channel_name)
+        if channel is not None:
+            text = _clean_text(m.group(5))
+            if text is not None:
+                return ChatMessage(
+                    timestamp=m.group(1),
+                    channel=channel,
+                    author=m.group(3),
+                    server=m.group(4) or "",
+                    text=text,
+                )
 
     # Try standard EN channel message: [Channel] Author: text
     m = _RE_CHANNEL_MSG.match(line)

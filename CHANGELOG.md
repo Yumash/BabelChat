@@ -1,5 +1,14 @@
 # Changelog / История изменений
 
+## [1.0.3] — 2026-02-22
+
+### Fixed / Исправлено
+- Parser: fixed "Parse returned None" for all messages — raw WoW color codes (`|cXXXXXXXX...|r`) inside player names now stripped before regex matching
+- Parser: added support for `[BracketChannel] |Hplayer:...|h[Name]|h: text` format (used by Raid Warning / Объявление рейду in RU scrollback)
+- Parser: added "Объявление рейду" (dative case) to channel map — RU scrollback uses dative, not genitive
+- Addon: removed all dedup logic — secret string taint prevents even table indexing on concat results; companion handles dedup
+- Debug console: now toggleable at runtime via Settings without restart; fixed idempotent initialization
+
 ## [1.0.2] — 2026-02-22
 
 ### Fixed / Исправлено

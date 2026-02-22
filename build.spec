@@ -44,6 +44,7 @@ a = Analysis(
         "pymem.exception",
         "app.i18n",
         "app.phrasebook",
+        "app.slang",
     ],
     hookspath=[],
     hooksconfig={},
