@@ -1,5 +1,12 @@
 # Changelog / История изменений
 
+## [1.0.8] — 2026-02-24
+
+### Fixed / Исправлено
+- Short phrases "hi", "sup", "go" now translated via phrasebook (were silently skipped due to MIN_TEXT_LENGTH and _SKIP_PHRASES filters)
+- Removed "go" from detector skip list — now handled as abbreviation before detection
+- Added "hi" → "привет", "sup" → "привет", "go" → "вперёд" as pre-detection abbreviations
+
 ## [1.0.7] — 2026-02-23
 
 ### Added / Добавлено

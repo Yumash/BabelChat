@@ -108,8 +108,6 @@ _add({"EN": "need help", "RU": "нужна помощь",
       "ES": "necesito ayuda"})
 _add({"EN": "come here", "RU": "иди сюда",
       "DE": "komm her", "FR": "viens ici", "ES": "ven aquí"})
-_add({"EN": "go", "RU": "вперёд",
-      "DE": "los", "FR": "go", "ES": "vamos"})
 _add({"EN": "let's go", "RU": "погнали",
       "DE": "los geht's", "FR": "allons-y", "ES": "vamos"})
 _add({"EN": "run", "RU": "бегите",
@@ -289,6 +287,12 @@ _abbrev("no", {
     "RU": "нет", "DE": "nein", "FR": "non", "ES": "no"})
 _abbrev("nope", {
     "RU": "неа", "DE": "nö", "FR": "nan", "ES": "nel"})
+_abbrev("hi", {
+    "RU": "привет", "DE": "hallo", "FR": "salut", "ES": "hola"})
+_abbrev("sup", {
+    "RU": "привет", "DE": "was geht", "FR": "salut", "ES": "qué tal"})
+_abbrev("go", {
+    "RU": "вперёд", "DE": "los", "FR": "go", "ES": "vamos"})
 
 # Summon requests (WoW convention: "123" = "summon me")
 _abbrev("123", {

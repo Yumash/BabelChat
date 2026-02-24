@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _SKIP_PHRASES = frozenset({
     "kk", "ok", "lol", "lmao", "rip", "ez",
     "pst", "+", "++", "+++",
-    "1", "2", "3", "123", "go", "pull", "cc", "aoe", "dps", "heal", "tank",
+    "1", "2", "3", "123", "pull", "cc", "aoe", "dps", "heal", "tank",
     "res", "rez", "buff", "nerf", "proc", "crit", "dodge", "miss",
 })
 

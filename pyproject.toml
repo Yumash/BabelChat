@@ -1,6 +1,6 @@
 [project]
 name = "wowtranslator"
-version = "1.0.7"
+version = "1.0.8"
 description = "Real-time WoW chat translator with smart overlay"
 requires-python = ">=3.12"
 
