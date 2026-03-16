@@ -1,19 +1,22 @@
+# Claude Code / Frai (local dev tools)
+.claude/
+.claude-lib/
+.claude-project/
+.frai/
+.rag/
+CLAUDE.md
+.mcp.json
+
 # Virtual environments
 .venv/
 venv/
-.rag/venv/
-
-# RAG data
-.rag/data/
 
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
-
-# Project archive
-.claude-project/archive/
+.ruff_cache/
 
 # Temp
 temp/
@@ -29,9 +32,6 @@ settings_dialog_pos.json
 # Downloaded addons (research)
 AutoChatLog/
 
-# MCP config (local paths)
-.mcp.json
-
 # Build artifacts
 build/
 dist/
@@ -39,6 +39,5 @@ dist/
 # Environment
 .env
 
-# SQLite (except project.db)
+# SQLite
 *.db
-!.claude-project/project.db

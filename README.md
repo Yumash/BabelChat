@@ -5,8 +5,12 @@
 <h1 align="center">WoW Chat Translator</h1>
 
 <p align="center">
-  <b>Переводчик чата World of Warcraft в реальном времени со смарт-оверлеем</b><br>
-  Приложение-компаньон + мини-аддон для мультиязычных групп
+  <b>Real-time World of Warcraft chat translation with a smart overlay</b><br>
+  Companion app + tiny WoW addon for multilingual groups
+</p>
+
+<p align="center">
+  <a href="README_ru.md">Русская версия (README_ru.md)</a>
 </p>
 
 <p align="center">
@@ -16,131 +20,131 @@
 </p>
 
 <p align="center">
-  <a href="README.en.md">English version</a>
+  <a href="README.md">Русская версия</a>
 </p>
 
 ---
 
-## Что это?
+## What Is This?
 
-WoWTranslator — десктопное приложение-компаньон, которое переводит чат World of Warcraft **в реальном времени** — с задержкой менее 1 секунды. Мини-аддон для WoW перехватывает сообщения чата и записывает их в буфер памяти; приложение-компаньон читает этот буфер, определяет язык, переводит через DeepL и показывает результат в стильном оверлее поверх игры.
+WoWTranslator is a desktop companion app that translates World of Warcraft chat **in real time** — with less than 1 second latency. A tiny WoW addon captures chat messages and writes them to a memory buffer; the companion app reads this buffer, detects the language, translates via DeepL, and displays results in a sleek overlay on top of your game.
 
-Никаких языковых барьеров в PUG-группах, международных гильдиях и кроссерверных рейдах.
+No more language barriers in PUGs, international guilds, or cross-realm groups.
 
-## Ключевые возможности
+## Key Features
 
-- **Перевод в реальном времени** — сообщения появляются в оверлее в течение ~1 секунды
-- **Автоопределение языка** — на базе lingua-py, полностью офлайн (~1мс на сообщение)
-- **Умный оверлей** — тёмная тема в стиле WoW с цветами каналов, прозрачный для кликов
-- **Двусторонний перевод** — переводит входящий чат И позволяет писать ответы на любом языке
-- **Встроенный разговорник** — 45 фраз + 30 игровых аббревиатур переводятся мгновенно без API
-- **Фильтры каналов** — Группа, Рейд, Гильдия, Сказать/Крик, Шёпот, Подземелье — выбирай нужное
-- **DeepL Free API** — 500 000 символов в месяц бесплатно (это ОЧЕНЬ много чата)
-- **Кэш переводов** — SQLite + LRU в памяти, одно и то же никогда не переводится дважды
-- **Глобальные горячие клавиши** — переключай перевод, не выходя из игры
-- **Мастер настройки** — пошаговая первоначальная настройка за 5 шагов
-- **Системный трей** — свернуть в трей, быстрый доступ к настройкам
-- **22 языка** — EN, RU, DE, FR, ES, IT, PT, PL, NL, SV, DA, FI, CS, RO, HU, BG, EL, TR, UK, JA, KO, ZH
+- **Real-time translation** — messages appear in the overlay within ~1 second
+- **Auto language detection** — powered by lingua-py, fully offline (~1ms per message)
+- **Smart overlay** — WoW-native dark theme with proper channel colors, click-through by default
+- **Bidirectional translation** — translate incoming chat AND compose outgoing messages in any language
+- **Built-in phrasebook** — 45 common phrases + 30 gaming abbreviations translated instantly without API
+- **Channel filters** — Party, Raid, Guild, Say/Yell, Whisper, Instance — pick what you need
+- **DeepL Free API** — 500,000 characters/month for free (that's a LOT of chat)
+- **Translation cache** — SQLite + in-memory LRU, never translates the same thing twice
+- **Global hotkeys** — toggle translation ON/OFF without leaving the game
+- **Setup wizard** — guided 5-step first-run configuration
+- **System tray** — minimize to tray, quick access to settings
+- **22 languages supported** — EN, RU, DE, FR, ES, IT, PT, PL, NL, SV, DA, FI, CS, RO, HU, BG, EL, TR, UK, JA, KO, ZH
 
-## Как это работает
+## How It Works
 
-### Проблема
+### The Problem
 
-WoW пишет чат в `WoWChatLog.txt`, но использует внутренний буфер ~4KB. Файл обновляется только когда буфер заполняется — **реальная задержка 1-5 минут**. Для переводчика чата это неприемлемо.
+WoW writes chat to `WoWChatLog.txt`, but uses an internal ~4KB buffer. The file only updates when the buffer fills — **real delay is 1-5 minutes**. Unacceptable for a chat translator.
 
-### Решение
+### The Solution
 
-Мини-аддон перехватывает события чата через стандартное WoW API и записывает сообщения в Lua-строку с уникальными маркерами. Приложение-компаньон находит эту строку в памяти процесса WoW через `ReadProcessMemory` и доставляет сообщения в пайплайн перевода — всё за ~1 секунду.
+A tiny addon hooks chat events via the standard WoW API and writes messages into a Lua string with unique markers. The companion app finds this string in WoW's process memory via `ReadProcessMemory` and delivers messages to the translation pipeline — all within ~1 second.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  World of Warcraft                                       │
 │                                                          │
-│  Аддон ChatTranslatorHelper                              │
-│  ├── Перехватывает события CHAT_MSG_*                    │
-│  ├── Опрашивает ChatFrame scrollback (200мс)             │
-│  ├── Кольцевой буфер (50 сообщений)                     │
-│  │   Формат: SEQ|RAW|форматированный текст               │
-│  └── Пишет в ChatTranslatorHelperDB.wctbuf               │
-│      с маркерами __WCT_BUF__ / __WCT_END__               │
+│  ChatTranslatorHelper addon                              │
+│  ├── Hooks CHAT_MSG_* events                             │
+│  ├── Polls ChatFrame scrollback (200ms)                  │
+│  ├── Ring buffer (50 messages)                           │
+│  │   Format: SEQ|RAW|formatted text                      │
+│  └── Writes to ChatTranslatorHelperDB.wctbuf             │
+│      with __WCT_BUF__ / __WCT_END__ markers              │
 └──────────┬───────────────────────────────────────────────┘
-           │  ReadProcessMemory (каждые 500мс)
+           │  ReadProcessMemory (every 500ms)
            ▼
 ┌──────────────────────────────────────────────────────────┐
-│  Приложение-компаньон (Python, запуск от админа)         │
+│  Companion App (Python, runs as admin)                   │
 │                                                          │
-│  Memory Reader ──→ Парсер ──→ Детектор языка             │
+│  Memory Reader ──→ Parser ──→ Language Detector          │
 │       │                           │                      │
 │       │         ┌─────────────────┘                      │
 │       │         ▼                                        │
-│       │    Разговорник (мгновенно) ──→ Кэш (SQLite)     │
-│       │         │                         │              │
-│       │         ▼                         ▼              │
-│       │    DeepL API ──────────→ Смарт-оверлей (PyQt6)  │
+│       │    Phrasebook (instant) ──→ Cache (SQLite)       │
+│       │         │                      │                 │
+│       │         ▼                      ▼                 │
+│       │    DeepL API ─────────→ Smart Overlay (PyQt6)    │
 │       │                                                  │
-│  File Watcher (фоллбэк, опрос каждую 1с)                │
+│  File Watcher (fallback, polls every 1s)                 │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Пайплайн перевода
+### Translation Pipeline
 
-Каждое сообщение проходит через многоступенчатый пайплайн:
+Every message goes through a multi-stage pipeline:
 
-1. **Проверка аббревиатур** (до детекции) — `gg` → `хорошая игра`, `ty` → `спасибо` — мгновенно
-2. **Определение языка** — lingua-py определяет язык офлайн, кириллический фоллбэк для коротких текстов
-3. **Поиск фраз** (после детекции) — `hello` → `привет`, `danke` → `спасибо` — мгновенно
-4. **Поиск в кэше** — персистентный кэш SQLite + LRU в памяти (1000 записей)
-5. **DeepL API** — вызывается только когда всё выше промахнулось
+1. **Abbreviation check** (pre-detection) — `gg` → `good game`, `ty` → `thank you` — instant
+2. **Language detection** — lingua-py identifies language offline, Cyrillic fallback for short text
+3. **Phrase lookup** (post-detection) — `привет` → `hello`, `danke` → `thanks` — instant
+4. **Cache lookup** — SQLite persistent cache + in-memory LRU (1000 entries)
+5. **DeepL API** — only called when all above miss
 
-Сообщения на вашем языке никогда не переводятся. Игровой жаргон (`lol`, `afk`, `brb`, `pull` и т.д.) автоматически пропускается.
+Messages in your own language are never translated. Gaming jargon (`lol`, `afk`, `brb`, `pull`, etc.) is automatically skipped.
 
-### Смарт-оверлей
+### Smart Overlay
 
-Оверлей стилизован под нативный чат WoW — тёмный полупрозрачный фон с правильными цветами каналов:
+The overlay is styled like WoW's native chat — dark semi-transparent background with proper channel colors:
 
-| Канал | Цвет |
-|-------|------|
-| Сказать | Белый |
-| Крик | Красный |
-| Группа | Голубой |
-| Рейд | Оранжевый |
-| Гильдия | Зелёный |
-| Шёпот | Розовый |
-| Подземелье | Оранжевый |
+| Channel | Color |
+|---------|-------|
+| Say | White |
+| Yell | Red |
+| Party | Light blue |
+| Raid | Orange |
+| Guild | Green |
+| Whisper | Pink |
+| Instance | Orange |
 
-Возможности:
-- **Прозрачный для кликов** по умолчанию — клики проходят в игру
-- **Перетаскивание и изменение размера** — позиция и размер запоминаются
-- **Свёртка до заголовка** — минимизируй одним кликом
-- **Вкладки фильтров каналов** — показывай только нужные каналы
-- **Панель ответов** — набери сообщение, выбери язык, нажми Enter, скопируй перевод в буфер обмена
+Features:
+- **Click-through** by default — clicks pass through to the game
+- **Draggable and resizable** — position and size are remembered
+- **Minimize to title bar** — collapse with one click
+- **Channel filter tabs** — show only the channels you want
+- **Reply translator** — type a message, pick target language, hit Enter, copy translation to clipboard
 
-### Архитектура Memory Reader
+### Memory Reader Architecture
 
-Memory reader использует каскадную стратегию сканирования для максимальной скорости:
+The memory reader uses a tiered scanning strategy for maximum speed:
 
-| Уровень | Скорость | Когда используется |
-|---------|----------|-------------------|
-| History scan (16 кэшированных регионов) | ~30мс | Первая попытка — проверяет регионы, где маркер был найден ранее |
-| Heap scan (все регионы ≤ 8MB) | ~1-3с | Промах истории — сканирует все heap-регионы |
-| Full scan (весь процесс) | ~7-10с | Крайний случай — полный скан через pymem |
+| Tier | Speed | When Used |
+|------|-------|-----------|
+| History scan (16 cached regions) | ~30ms | First try — checks where markers were found before |
+| Heap scan (all regions ≤ 8MB) | ~1-3s | History miss — scans all heap regions |
+| Full scan (entire process) | ~7-10s | Last resort — pymem pattern scan |
 
-Аддон создаёт новую Lua-строку при каждом обновлении буфера (строки в Lua иммутабельны). Memory reader отслеживает, в каких регионах памяти ранее находился маркер, и проверяет их первыми — что даёт субсекундное нахождение после перемещения буфера.
+The addon creates a new Lua string on every buffer update (Lua strings are immutable). The memory reader tracks which memory regions previously contained the marker and checks those first — resulting in sub-second relocation after buffer moves.
 
-## Установка
+## Installation
 
-### Быстрый старт (рекомендуется)
+### Quick Start (Recommended)
 
-1. Скачай `WoWTranslator.zip` из [Releases](https://github.com/Yumash/WoWTranslator/releases)
-2. Распакуй и запусти `WoWTranslator.exe` **от имени Администратора**
-3. Следуй мастеру настройки:
-   - Получи [бесплатный API-ключ DeepL](https://www.deepl.com/pro-api) (занимает 2 минуты)
-   - Укажи путь к установке WoW (автоопределение в большинстве случаев)
-   - Выбери свой язык и целевой язык перевода
-   - Установи аддон одним кликом
-4. Запусти WoW, зайди в группу и смотри как появляются переводы!
+1. Download `WoWTranslator.zip` from [Releases](https://github.com/Yumash/WoWTranslator/releases)
+2. Extract anywhere and run `WoWTranslator.exe` **as Administrator**
+3. Follow the setup wizard:
+   - Get a [free DeepL API key](https://www.deepl.com/pro-api) (takes 2 minutes)
+   - Set your WoW installation path (auto-detected in most cases)
+   - Choose your language and target translation language
+   - Install the addon with one click
+4. Launch WoW, enter a group, and watch translations appear!
 
-### Из исходников
+### From Source
 
 ```bash
 git clone https://github.com/Yumash/WoWTranslator.git
@@ -149,72 +153,72 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
-> **Важно:** Запускать от имени Администратора (ReadProcessMemory требует повышенных привилегий).
+> **Note:** Must be run as Administrator (ReadProcessMemory requires elevated privileges).
 
-### Аддон WoW (ручная установка)
+### WoW Addon (Manual Install)
 
-Скопируй папку `addon/ChatTranslatorHelper/` в:
+Copy the `addon/ChatTranslatorHelper/` folder to:
 ```
 World of Warcraft/_retail_/Interface/AddOns/ChatTranslatorHelper/
 ```
 
-Или позволь приложению-компаньону установить его (Настройки → Установить аддон).
+Or let the companion app install it for you (Settings → Install Addon).
 
-## Настройка
+## Configuration
 
-### Мастер настройки
+### Setup Wizard
 
-При первом запуске пошаговый мастер проведёт через 5 шагов:
+On first launch, a 5-step wizard guides you through:
 
-1. **Приветствие** — выбор языка интерфейса
-2. **API-ключ** — вставь ключ DeepL и проверь его валидность
-3. **Путь к WoW** — автоопределение или ручной выбор
-4. **Языки** — свой язык и целевой язык перевода
-5. **Готово** — установка аддона и запуск
+1. **Welcome** — choose your interface language
+2. **API Key** — paste your DeepL API key and validate it
+3. **WoW Path** — auto-detect or browse to your WoW installation
+4. **Languages** — set your own language and target translation language
+5. **Ready** — install the addon and launch
 
-### Диалог настроек
+### Settings Dialog
 
-Доступен через кнопку на панели оверлея или системный трей → Настройки.
+Access via the overlay toolbar button or system tray → Settings.
 
-**Вкладка «Основные»:**
-- Управление API-ключом DeepL с отображением квоты использования
-- Путь к WoW и установщик аддона
-- Язык интерфейса (RU, EN)
-- Ваш язык / целевой язык перевода
-- Переключатели каналов (Группа, Рейд, Гильдия, Сказать/Крик, Шёпот, Подземелье)
+**General tab:**
+- DeepL API key management with usage quota display
+- WoW path and addon installer
+- Interface language (RU, EN)
+- Your language / target language
+- Channel toggles (Party, Raid, Guild, Say/Yell, Whisper, Instance)
 
-**Вкладка «Оверлей»:**
-- Прозрачность фона (20-100%)
-- Размер шрифта (8-20pt)
-- Перевод ВКЛ по умолчанию
-- Показывать окно отладки (консоль)
+**Overlay tab:**
+- Background opacity (20-100%)
+- Font size (8-20pt)
+- Translation ON by default toggle
+- Debug console toggle
 
-**Вкладка «Горячие клавиши»:**
-- Переключение перевода (по умолчанию: `Ctrl+Shift+T`)
-- Перевод из буфера обмена (по умолчанию: `Ctrl+Shift+C`)
-- Захват комбинации клавиш с поддержкой модификаторов
+**Hotkeys tab:**
+- Toggle Translation (default: `Ctrl+Shift+T`)
+- Clipboard Translate (default: `Ctrl+Shift+C`)
+- Custom key capture with modifier support
 
-### Команды аддона
+### Addon Commands
 
-Введи в чат WoW:
+Type in WoW chat:
 
-| Команда | Описание |
-|---------|----------|
-| `/wct` | Статус аддона |
-| `/wct buf` | Информация о буфере памяти (кол-во сообщений, seq) |
-| `/wct log on\|off` | Включить/выключить логирование чата |
-| `/wct auto on\|off` | Авто-логирование при входе |
-| `/wct flush on\|off\|<сек>` | Управление таймером flush |
-| `/wct poll on\|off` | Управление опросом ChatFrame |
-| `/wct verbose on\|off` | Подробные сообщения |
+| Command | Description |
+|---------|------------|
+| `/wct` | Show addon status |
+| `/wct buf` | Memory buffer info (message count, seq) |
+| `/wct log on\|off` | Enable/disable chat logging |
+| `/wct auto on\|off` | Auto-enable logging on login |
+| `/wct flush on\|off\|<sec>` | Control log flush timer |
+| `/wct poll on\|off` | Control ChatFrame polling |
+| `/wct verbose on\|off` | Toggle verbose output |
 
 ### config.json
 
-Все настройки хранятся в `config.json` (создаётся автоматически). Основные поля:
+All settings are stored in `config.json` (auto-generated). Key fields:
 
 ```json
 {
-  "deepl_api_key": "ваш-ключ:fx",
+  "deepl_api_key": "your-key-here:fx",
   "wow_path": "D:/World of Warcraft",
   "own_language": "RU",
   "target_language": "EN",
@@ -231,89 +235,85 @@ World of Warcraft/_retail_/Interface/AddOns/ChatTranslatorHelper/
 }
 ```
 
-## Встроенный разговорник
+## Built-in Phrasebook
 
-WoWTranslator включает встроенный разговорник для мгновенного перевода популярных фраз и игровых аббревиатур — **без обращения к API**.
+WoWTranslator includes a built-in phrasebook for instant translation of common phrases and gaming abbreviations — **no API call needed**.
 
-**45 фраз** на 5 языках (EN, RU, DE, FR, ES):
-- Приветствия: hello, bye, good morning, welcome, see you...
-- Вежливость: thanks, please, sorry, no problem, my bad...
-- Координация: ready, wait, follow me, on my way, need help...
-- WoW-специфичные: summon please, invite please, good run, well played...
+**45 phrases** across 5 languages (EN, RU, DE, FR, ES):
+- Greetings: hello, bye, good morning, welcome, see you...
+- Politeness: thanks, please, sorry, no problem, my bad...
+- Gaming: ready, wait, follow me, on my way, need help...
+- WoW-specific: summon please, invite please, good run, well played...
 
-**30 игровых аббревиатур** (универсальные):
+**30 gaming abbreviations** (universal):
 `gg`, `bb`, `afk`, `brb`, `ty`, `np`, `wp`, `gj`, `gl`, `hf`, `omw`, `oom`, `lfg`, `lfm`, `inv`, `rdy`, `inc`, `wts`, `wtb`, `mb`, `idd`, `lf`, `pls`, `thx`, `nvm`, `idk`, `imo`, `tbh`, `btw`, `gtg`
 
-## Стек технологий
+## Tech Stack
 
-| Компонент | Технология |
+| Component | Technology |
 |-----------|-----------|
-| Приложение-компаньон | Python 3.12 |
-| GUI / Оверлей | PyQt6 (WS_EX_TRANSPARENT, click-through) |
+| Companion App | Python 3.12 |
+| GUI / Overlay | PyQt6 (WS_EX_TRANSPARENT, click-through) |
 | Memory Reader | pymem (ReadProcessMemory) |
-| Определение языка | lingua-py (офлайн, ~1мс) |
-| Перевод | DeepL Free API (500K символов/мес) |
-| Разговорник | Встроенный: 45 фраз + 30 аббревиатур |
-| Кэш | SQLite + LRU в памяти |
-| Сборка | PyInstaller → single .exe |
-| Аддон WoW | Lua 5.1 (~300 строк) |
-| Версия WoW | The War Within / Midnight (12.0+) |
+| Language Detection | lingua-py (offline, ~1ms) |
+| Translation | DeepL Free API (500K chars/month) |
+| Phrasebook | Built-in: 45 phrases + 30 abbreviations |
+| Cache | SQLite + in-memory LRU |
+| Build | PyInstaller → single .exe |
+| WoW Addon | Lua 5.1 (~300 lines) |
+| WoW Version | The War Within / Midnight (12.0+) |
 
-## Соответствие ToS Blizzard
+## Blizzard ToS Compliance
 
-| Аспект | Статус |
+| Aspect | Status |
 |--------|--------|
-| Чтение памяти (ReadProcessMemory) | Только чтение. Warden не флагит read-only доступ. Тот же подход что у WeakAuras Companion и WarcraftLogs. |
-| Оверлей поверх игры | Разрешено. Тот же подход что у Discord Overlay. |
-| Аддон хукает CHAT_MSG_* | Стандартное WoW API. Используется всеми чат-аддонами. |
-| Нет инъекции кода | Соответствует. Нет DLL-инъекции, нет хуков. |
-| Нет автоматизации | Соответствует. Нет автоматических действий, движения, боя. |
-| Отправка через буфер обмена | Пользователь вручную вставляет через Ctrl+V. Не автоматизация. |
+| Memory reading (ReadProcessMemory) | Read-only. Warden does not flag read-only access. Same approach as WeakAuras Companion and WarcraftLogs. |
+| Overlay on top of game | Allowed. Same approach as Discord Overlay. |
+| Addon hooks CHAT_MSG_* | Standard WoW API. Used by every chat addon. |
+| No code injection | Compliant. No DLL injection, no hooking. |
+| No automation | Compliant. No automated actions, movement, or combat. |
+| Outgoing via clipboard | User manually pastes with Ctrl+V. Not automation. |
 
-## Ограничения
+## Limitations
 
-- **Требуются права Администратора** — ReadProcessMemory нужны повышенные привилегии
-- **DeepL Free** — 500K символов/мес (~10K сообщений). Для безлимита — платный план.
-- **Lua-песочница WoW** — аддон не может делать HTTP-запросы, поэтому перевод только через компаньон
-- **Отправка сообщений** — вручную (копировать → вставить → Enter в WoW). Так задумано для соответствия ToS.
-- **Нумерованные каналы** — Торговля, Общий, Поиск группы пока не парсятся (низкий приоритет)
-- **Только Windows** — ReadProcessMemory — Windows API
+- **Requires Administrator** — ReadProcessMemory needs elevated privileges
+- **DeepL Free** — 500K characters/month (~10K messages). Upgrade to paid plan for unlimited.
+- **WoW Lua sandbox** — addon cannot make HTTP requests, so translation requires the companion app
+- **Outgoing messages** — must be sent manually (copy → paste → Enter in WoW). By design for ToS compliance.
+- **Numbered channels** — Trade, General, LookingForGroup not yet parsed (low priority)
+- **Windows only** — ReadProcessMemory is a Windows API
 
-## Разработка
+## Development
 
 ```bash
-# Запуск
+# Run
 python -m app.main
 
-# Тесты
+# Test
 pytest
 
-# Линтер
+# Lint
 ruff check app/ tests/
 
-# Сборка .exe
+# Build .exe
 pyinstaller build.spec
 ```
 
-## Благодарности
-
-- **[WoW Translator](https://www.curseforge.com/wow/addons/wow-translator)** от **Pirson** — глоссарий WoW-терминов и аббревиатур на 11 языках. Встроенный разговорник WoWTranslator включает словарные данные из этого аддона.
-
-## Авторы
+## Authors
 
 - **Andrey Yumashev** — [@Yumash](https://github.com/Yumash)
-- **Claude** (Anthropic) — AI-соавтор
+- **Claude** (Anthropic) — AI co-author
 
-## Поддержать проект
+## Support the Project
 
-Если WoWTranslator делает ваш мультиязычный опыт в WoW лучше, поддержите разработку:
+If WoWTranslator makes your multilingual WoW experience better, consider supporting its development:
 
-| Криптовалюта | Адрес |
+| Cryptocurrency | Address |
 |---|---|
 | **USDT TRC20 (ByBit)** | `TGaUz963ZaCoHrfoDDgy1sCvSrK1wsZvcx` |
 | **BTC (ByBit)** | `1BkYvFT8iBVG3GfTqkR2aBkABNkTrhYuja` |
 | **TON** | `UQDFaHBN1pcQZ7_9-w1E_hS_JNfGf3d0flS_467w7LOQ7xbK` |
 
-## Лицензия
+## License
 
 [Apache License 2.0](LICENSE)
