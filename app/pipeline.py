@@ -14,10 +14,10 @@ from lingua import Language
 
 from app.cache import TranslationCache
 from app.detector import ChatLanguageDetector
+from app.glossary import expand_wow_terms
 from app.parser import Channel, ChatMessage, parse_line
 from app.phrasebook import lookup as phrasebook_lookup
 from app.phrasebook import lookup_abbreviation as phrasebook_abbrev
-from app.glossary import expand_wow_terms
 from app.slang import expand_slang
 from app.text_utils import (
     clean_message_text,

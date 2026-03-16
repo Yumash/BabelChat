@@ -12,7 +12,7 @@ pyinstaller>=6.0.0
 
 # Dev
 pytest>=8.0.0
-ruff>=0.15.0
+ruff==0.15.6
 
 # Utils
 python-dotenv>=1.0.0
