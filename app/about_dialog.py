@@ -1,4 +1,4 @@
-"""About dialog for WoWTranslator — WoW-themed."""
+"""About dialog for BabelChat — WoW-themed."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 
 from app.i18n import tr
 
-VERSION = "1.0.8"
+VERSION = "3.0.0"
 
 ABOUT_STYLESHEET = """
 QDialog {
@@ -103,7 +103,7 @@ class AboutDialog(QDialog):
         title_block = QVBoxLayout()
         title_block.setSpacing(4)
 
-        title = QLabel("WoWTranslator")
+        title = QLabel("BabelChat")
         title.setStyleSheet("color: #FFD200; font-size: 22px; font-weight: bold;")
         title_block.addWidget(title)
 
@@ -149,8 +149,8 @@ class AboutDialog(QDialog):
         layout.addWidget(links_sep)
 
         github_link = QLabel(
-            '<a href="https://github.com/Yumash/WoWTranslator" '
-            'style="color: #FFD200; font-size: 11px;">GitHub: Yumash/WoWTranslator</a>'
+            '<a href="https://github.com/Yumash/BabelChat" '
+            'style="color: #FFD200; font-size: 11px;">GitHub: Yumash/BabelChat</a>'
         )
         github_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
         github_link.setOpenExternalLinks(True)

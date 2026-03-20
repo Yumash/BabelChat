@@ -1,4 +1,253 @@
-# Changelog / История изменений
+# Changelog / История изменений / Registro de cambios
+
+## [3.0.1] — 2026-03-20
+
+### Fixed / Исправлено / Corregido
+- **CRITICAL:** Race condition in dedup — `_recent_messages` accessed from multiple threads without lock, now protected by `threading.Lock`
+- **CRITICAL:** Overlay memory leak — `_messages` list and QTextEdit grew without bound over long sessions, now capped at 500/1500
+- Config torn reads — pipeline thread could see mix of old and new config values, now uses snapshot
+- Translator crash on network errors — only `DeepLException` was caught, added `except Exception` fallback
+- SQLite cache never cleaned up — `cleanup()` called on pipeline start to remove expired entries
+- Config load silently reset to defaults — now logs warning on corrupt/missing config
+- Dedup timestamps used `time.time()` (affected by NTP) — switched to `time.monotonic()`
+- Empty payload from addon buffer caused wasted work — now skipped early
+
+— **КРИТИЧНО:** Гонка в дедупликации — `_recent_messages` без блокировки из нескольких потоков, добавлен `threading.Lock`
+— **КРИТИЧНО:** Утечка памяти в оверлее — список сообщений и QTextEdit росли бесконечно, ограничены 500/1500
+— Разрыв чтения конфига — pipeline мог видеть смесь старых и новых значений, теперь snapshot
+— Краш переводчика при сетевых ошибках — ловился только `DeepLException`, добавлен общий обработчик
+— Кэш SQLite никогда не чистился — `cleanup()` вызывается при старте
+— Config молча сбрасывался при повреждении — теперь логирует предупреждение
+— Dedup использовал `time.time()` (чувствителен к NTP) — заменён на `time.monotonic()`
+— Пустой payload из буфера создавал лишнюю работу — пропускается
+
+— **CRÍTICO:** Condición de carrera en dedup — `_recent_messages` sin bloqueo desde múltiples hilos, protegido con `threading.Lock`
+— **CRÍTICO:** Fuga de memoria en overlay — lista de mensajes y QTextEdit crecían sin límite, limitados a 500/1500
+— Lecturas rotas de config — pipeline podía ver mezcla de valores viejos y nuevos, ahora usa snapshot
+— Crash del traductor por errores de red — solo se capturaba `DeepLException`, añadido fallback general
+— Caché SQLite nunca se limpiaba — `cleanup()` se ejecuta al iniciar
+— Config se reiniciaba silenciosamente — ahora registra advertencia
+— Dedup usaba `time.time()` (afectado por NTP) — cambiado a `time.monotonic()`
+— Payload vacío del buffer causaba trabajo innecesario — ahora se omite
+
+### Added / Добавлено / Añadido
+- Renamed project: ChatTranslatorHelper → **BabelChat** (new identity, no CurseForge conflict)
+- Slang dictionary category — 33 new terms: ez, copium, bricked, pumping, carry, wipe, lust, pug, soak, kite, gank, glad...
+- Slash command `/babel` (replaces `/wt`)
+- CurseForge packaging: `.pkgmeta`, addon README, BBCode description, separate `BabelChat-Addon.zip` in releases
+- DB migration from old ChatTranslatorHelper (automatic on first load)
+- Technical documentation (`docs/tech/`) and user guide (`docs/user/`)
+
+— Переименование: ChatTranslatorHelper → **BabelChat** (новая идентичность, нет конфликта на CurseForge)
+— Категория сленга — 33 новых термина: ez, copium, bricked, pumping, carry, wipe, lust, pug, soak, kite, gank, glad...
+— Слеш-команда `/babel` (вместо `/wt`)
+— Пакетирование CurseForge: `.pkgmeta`, README аддона, BBCode описание, отдельный `BabelChat-Addon.zip`
+— Миграция БД из ChatTranslatorHelper (автоматически при первом запуске)
+— Техническая документация (`docs/tech/`) и руководство пользователя (`docs/user/`)
+
+— Renombrado: ChatTranslatorHelper → **BabelChat** (nueva identidad, sin conflicto en CurseForge)
+— Categoría de jerga — 33 nuevos términos: ez, copium, bricked, pumping, carry, wipe, lust, pug, soak, kite, gank, glad...
+— Comando `/babel` (reemplaza `/wt`)
+— Empaquetado CurseForge: `.pkgmeta`, README del addon, descripción BBCode, `BabelChat-Addon.zip` separado
+— Migración de BD desde ChatTranslatorHelper (automática al primer inicio)
+— Documentación técnica (`docs/tech/`) y guía de usuario (`docs/user/`)
+
+## [3.0.0] — 2026-03-20
+
+### Added / Добавлено / Añadido
+- Streaming translation — original message appears in overlay instantly, translation arrives 0.5-2s later (progressive rendering)
+- Thread-safe translation cache with explicit `threading.Lock` (was relying on GIL)
+- Atomic config save — write to temp file + `os.replace()`, backup `.bak`, auto-recovery from corrupt JSON
+- Seq freshness tracking — detects frozen (zombie) buffers via 3-poll seq history, auto-triggers rescan
+- Blacklist TTL (60s) — zombie addresses expire and get re-scanned after GC reclaims memory
+- DictEngine v2: clean annotation line `→ term1, term2` below original (no more inline color spam)
+- Hyperlink-aware dictionary matching — skips `|H...|h` and `|cff...|r` blocks in WoW chat
+- Overlap guard — prevents double-matching of dictionary terms
+- 28 new tests (105 → 133): pipeline E2E (8), parser robustness (20)
+
+— Стриминг перевода — оригинал появляется в оверлее мгновенно, перевод подгружается через 0.5-2с (progressive rendering)
+— Потокобезопасный кэш переводов с `threading.Lock` (раньше держался на GIL)
+— Атомарное сохранение конфига — запись в temp файл + `os.replace()`, бэкап `.bak`, авто-восстановление из повреждённого JSON
+— Отслеживание свежести seq — обнаруживает замороженные (зомби) буферы через историю 3 опросов, автоматический пересканирование
+— TTL чёрного списка (60с) — зомби-адреса истекают и пересканируются после освобождения GC
+— DictEngine v2: чистая аннотация `→ term1, term2` под оригиналом (без inline-спама цветами)
+— Hyperlink-aware словарный поиск — пропускает блоки `|H...|h` и `|cff...|r` в WoW чате
+— Защита от пересечений — предотвращает двойной перевод словарных терминов
+— 28 новых тестов (105 → 133): pipeline E2E (8), парсер robustness (20)
+
+— Traducción streaming — el mensaje original aparece instantáneamente en el overlay, la traducción llega 0.5-2s después (renderizado progresivo)
+— Caché de traducción thread-safe con `threading.Lock` (antes dependía del GIL)
+— Guardado atómico de config — escritura en archivo temp + `os.replace()`, backup `.bak`, auto-recuperación de JSON corrupto
+— Seguimiento de frescura seq — detecta buffers congelados (zombie) via historial de 3 sondeos, re-escaneo automático
+— TTL de lista negra (60s) — direcciones zombie expiran y se re-escanean después de que el GC libere memoria
+— DictEngine v2: línea de anotación limpia `→ term1, term2` debajo del original (sin spam de colores inline)
+— Coincidencia de diccionario consciente de hyperlinks — omite bloques `|H...|h` y `|cff...|r` en el chat de WoW
+— Protección contra solapamientos — previene doble traducción de términos del diccionario
+— 28 nuevos tests (105 → 133): pipeline E2E (8), parser robustez (20)
+
+### Changed / Изменено / Cambiado
+- DICT buffer separator changed from `|` to `\t` — fixes parsing when WoW color codes contain pipes
+- Pipeline: `translation_enabled` check moved before text processing (skip early)
+- Parser `parse_addon_line` updated for v2.1 format (RAW/DICT kind field)
+
+— Разделитель DICT-буфера изменён с `|` на `\t` — исправляет парсинг когда WoW color codes содержат pipes
+— Pipeline: проверка `translation_enabled` перенесена до обработки текста (ранний выход)
+— Парсер `parse_addon_line` обновлён для формата v2.1 (поле KIND: RAW/DICT)
+
+— Separador de buffer DICT cambiado de `|` a `\t` — corrige el parsing cuando los códigos de color WoW contienen pipes
+— Pipeline: verificación `translation_enabled` movida antes del procesamiento de texto (salida temprana)
+— Parser `parse_addon_line` actualizado para formato v2.1 (campo KIND: RAW/DICT)
+
+### Fixed / Исправлено / Corregido
+- SQLite `check_same_thread=False` without locking — now protected by `threading.Lock`
+- Config corruption on crash — atomic write prevents partial file writes
+- DICT messages with WoW color codes breaking parser (pipe in `|cffXXXXXX...|r`)
+- DictEngine matching inside WoW hyperlinks (`|Hitem:...|h[Name]|h|r`)
+- DictEngine overlapping matches producing duplicate translations
+
+— SQLite `check_same_thread=False` без блокировки — теперь защищён `threading.Lock`
+— Порча конфига при крэше — атомарная запись предотвращает частичную запись файла
+— DICT-сообщения с WoW color codes ломали парсер (pipe в `|cffXXXXXX...|r`)
+— DictEngine находил совпадения внутри WoW гиперссылок (`|Hitem:...|h[Name]|h|r`)
+— Пересекающиеся совпадения DictEngine создавали двойные переводы
+
+— SQLite `check_same_thread=False` sin bloqueo — ahora protegido por `threading.Lock`
+— Corrupción de config al crashear — escritura atómica previene escrituras parciales
+— Mensajes DICT con códigos de color WoW rompían el parser (pipe en `|cffXXXXXX...|r`)
+— DictEngine encontraba coincidencias dentro de hyperlinks WoW (`|Hitem:...|h[Name]|h|r`)
+— Coincidencias solapadas de DictEngine creaban traducciones duplicadas
+
+## [2.2.2] — 2026-03-19
+
+### Added / Добавлено / Añadido
+- Parallel heap scan: 8-thread parallel ReadProcessMemory via ThreadPoolExecutor — scans 4000+ memory regions concurrently
+- "Don't translate own messages" option in Settings → Overlay with auto-detected player name from addon META
+- Spanish UI translations (153 strings) — full overlay and settings localization
+- "Why Python?" section in README (EN/RU/ES) explaining architecture choice
+- NPC message filter in chat history (names with spaces in Say/Yell channels)
+- WoW color code stripping (|cXXXXXXXX...|r) from addon dictionary translations
+
+— Параллельное сканирование кучи: 8 потоков ReadProcessMemory через ThreadPoolExecutor — 4000+ регионов памяти одновременно
+— Опция «Не переводить свои сообщения» в Настройки → Оверлей с автоопределением имени игрока из META аддона
+— Испанский перевод интерфейса (153 строки) — полная локализация оверлея и настроек
+— Раздел «Почему Python?» в README (EN/RU/ES)
+— Фильтр NPC-сообщений в истории чата (имена с пробелами в каналах Say/Yell)
+— Удаление цветовых кодов WoW (|cXXXXXXXX...|r) из словарных переводов аддона
+
+— Escaneo paralelo del heap: 8 hilos ReadProcessMemory via ThreadPoolExecutor — 4000+ regiones de memoria simultáneamente
+— Opción "No traducir mis mensajes" en Ajustes → Overlay con detección automática del nombre del jugador desde META del addon
+— Traducciones de la interfaz al español (153 cadenas) — localización completa del overlay y ajustes
+— Sección "¿Por qué Python?" en README (EN/RU/ES)
+— Filtro de mensajes NPC en el historial de chat (nombres con espacios en canales Say/Yell)
+— Eliminación de códigos de color WoW (|cXXXXXXXX...|r) de las traducciones del diccionario del addon
+
+### Changed / Изменено / Cambiado
+- DICT translation bypass — addon dictionary disabled for companion, all messages go through DeepL for consistent quality
+- Dedup TTL increased from 30s to 60s — prevents duplicate messages from zombie Lua buffer copies
+- Smart rescan threshold reduced from 3s to 1.5s — faster detection of buffer moves
+- Rescan intervals reduced [2, 3, 5, 10]s (was [2, 5, 10, 30]s)
+- Quick-to-full rescan threshold: 2 misses (was 5)
+
+— Обход DICT-перевода — словарь аддона отключён для companion, все сообщения идут через DeepL для стабильного качества
+— TTL дедупликации увеличен с 30с до 60с — предотвращает дубли от зомби-копий Lua-буфера
+— Порог умного пересканирования снижен с 3с до 1.5с — быстрее обнаружение перемещения буфера
+— Интервалы пересканирования уменьшены [2, 3, 5, 10]с (было [2, 5, 10, 30]с)
+— Порог быстрого→полного пересканирования: 2 промаха (было 5)
+
+— Bypass de traducción DICT — diccionario del addon desactivado para companion, todos los mensajes pasan por DeepL para calidad consistente
+— TTL de dedup aumentado de 30s a 60s — previene mensajes duplicados de copias zombie del buffer Lua
+— Umbral de re-escaneo inteligente reducido de 3s a 1.5s — detección más rápida de movimientos del buffer
+— Intervalos de re-escaneo reducidos [2, 3, 5, 10]s (era [2, 5, 10, 30]s)
+— Umbral de re-escaneo rápido→completo: 2 fallos (era 5)
+
+### Fixed / Исправлено / Corregido
+- Seq reset dedup bug — was saving texts from NEW buffer instead of delivered messages, causing all post-/reload messages to be skipped
+- Player name property missing on MemoryChatWatcher wrapper class
+- Lazy import crash for clean_message_text in pipeline
+
+— Баг дедупликации при сбросе seq — сохранялись тексты из НОВОГО буфера вместо доставленных сообщений, из-за чего все сообщения после /reload пропускались
+— Отсутствие свойства player name в классе-обёртке MemoryChatWatcher
+— Краш ленивого импорта clean_message_text в pipeline
+
+— Bug de dedup al reiniciar seq — se guardaban textos del buffer NUEVO en vez de mensajes entregados, causando que todos los mensajes post-/reload se omitieran
+— Propiedad player name faltante en la clase wrapper MemoryChatWatcher
+— Crash de importación lazy de clean_message_text en pipeline
+
+### Performance / Производительность / Rendimiento
+- ~50% messages delivered instantly via quick rescan (0-31ms)
+- ~50% messages via heap scan (2.5-3.8s) — memory bandwidth limited at 3.3GB
+- Pointer chasing prototype implemented (disabled) — needs WoW Lua internals research
+
+— ~50% сообщений доставляются мгновенно через быстрое пересканирование (0-31мс)
+— ~50% сообщений через сканирование кучи (2.5-3.8с) — ограничение пропускной способности памяти 3.3ГБ
+— Прототип pointer chasing реализован (отключён) — требует исследования внутренностей WoW Lua
+
+— ~50% mensajes entregados instantáneamente via re-escaneo rápido (0-31ms)
+— ~50% mensajes via escaneo del heap (2.5-3.8s) — limitado por ancho de banda de memoria a 3.3GB
+— Prototipo de pointer chasing implementado (desactivado) — necesita investigación de internos de WoW Lua
+
+## [2.1.0] — 2026-03-18
+
+### Added / Добавлено / Añadido
+- Addon buffer format v2.1: SEQ|KIND|EVENT|author|text (DICT adds |translated)
+- Dedup in BufferAddEntry (author+text TTL 2s) — fixes triple messages from multiple ChatFrames
+- Addon buffers ALL channels regardless of dict.channels filter
+- Pipeline: DICT messages show with dictionary translation (no DeepL call)
+- Pipeline: RAW own-language messages shown without translation (conversation context)
+- Single-instance guard via PID lock file (wct.lock) with TerminateProcess
+- Zombie marker blacklist in memory reader
+- Spanish localization in Locales.lua (full esES/esMX)
+
+— Формат буфера аддона v2.1: SEQ|KIND|EVENT|author|text (DICT добавляет |translated)
+— Дедупликация в BufferAddEntry (author+text TTL 2с) — исправляет тройные сообщения от нескольких ChatFrame
+— Аддон буферизует ВСЕ каналы независимо от фильтра dict.channels
+— Pipeline: DICT-сообщения отображаются со словарным переводом (без вызова DeepL)
+— Pipeline: RAW-сообщения на своём языке отображаются без перевода (контекст беседы)
+— Защита от повторного запуска через PID lock file (wct.lock) с TerminateProcess
+— Чёрный список зомби-маркеров в memory reader
+— Испанская локализация в Locales.lua (полная esES/esMX)
+
+— Formato de buffer del addon v2.1: SEQ|KIND|EVENT|author|text (DICT añade |translated)
+— Dedup en BufferAddEntry (author+text TTL 2s) — corrige mensajes triples de múltiples ChatFrames
+— El addon almacena TODOS los canales independientemente del filtro dict.channels
+— Pipeline: mensajes DICT se muestran con traducción del diccionario (sin llamada a DeepL)
+— Pipeline: mensajes RAW en tu idioma se muestran sin traducción (contexto de conversación)
+— Protección de instancia única via PID lock file (wct.lock) con TerminateProcess
+— Lista negra de marcadores zombie en memory reader
+— Localización al español en Locales.lua (completa esES/esMX)
+
+### Changed / Изменено / Cambiado
+- Version bumped to 2.1.0 across TOC, Core.lua, Config.lua, about_dialog.py
+
+— Версия обновлена до 2.1.0 в TOC, Core.lua, Config.lua, about_dialog.py
+
+— Versión actualizada a 2.1.0 en TOC, Core.lua, Config.lua, about_dialog.py
+
+## [2.0.0] — 2026-03-16
+
+### Added / Добавлено / Añadido
+- Merged Pirson's WoW Translator dictionary engine — 313 WoW terms in 14 languages with inline chat translation
+- LibBabble integration — 5000+ localized zone names, item sets, races, classes
+- Addon settings panel in WoW (Interface > AddOns > Chat Translator) with category toggles, channel filters, language picker, color picker
+- Minimap button for quick access to settings
+- Companion app toggle — enable/disable memory buffer for overlay independently
+- DICT/RAW message tagging — companion skips DeepL API for dictionary-matched messages
+- Neighborhood scan — memory reader recovers from Lua GC relocation in ~200ms (was ~2.5s)
+- Spanish README (README_es.md)
+- Full addon UI localization: English, Russian, Spanish
+
+### Changed / Изменено / Cambiado
+- Addon architecture: switched from GetMessageInfo polling (200ms) to ChatFrame_AddMessageEventFilter (event-driven, 0ms delay)
+- Buffer flush interval reduced from 1.5s to 0.5s
+- Companion poll interval reduced from 500ms to 250ms
+- Buffer header now includes sequence number (`__WCT_BUF_0042__`) for fast staleness check
+- TOC updated for WoW Midnight (Interface: 120001, 120005)
+- Dual author credit: Andrey Yumashev + Pirson
+
+### Performance / Производительность / Rendimiento
+- End-to-end latency for dictionary hits: ~2.2s → ~0.75s
+- End-to-end latency for DeepL translations: ~2.5s → ~1.0s
+- GetMessageInfo polling preserved as disabled fallback (`/wt poll on`)
 
 ## [1.0.8] — 2026-02-24
 
@@ -118,7 +367,7 @@ First public release.
 - Opacity slider (20-100%)
 
 **WoW Addon / Аддон WoW:**
-- ChatTranslatorHelper addon (~300 lines Lua)
+- BabelChat addon (~300 lines Lua)
 - ChatFrame scrollback polling every 200ms
 - Ring buffer (50 messages) with `__WCT_BUF__` / `__WCT_END__` markers
 - StripMarkup preserves hyperlinks while removing color codes

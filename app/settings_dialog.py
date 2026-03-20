@@ -1,4 +1,4 @@
-"""Settings dialog for WoWTranslator — WoW-themed dark UI."""
+"""Settings dialog for BabelChat — WoW-themed dark UI."""
 
 from __future__ import annotations
 
@@ -685,6 +685,10 @@ class SettingsDialog(QDialog):
         self._translate_default.setChecked(self._config.translation_enabled_default)
         behavior_layout.addWidget(self._translate_default)
 
+        self._skip_own_messages = QCheckBox(tr("settings.overlay.skip_own_messages"))
+        self._skip_own_messages.setChecked(self._config.skip_own_messages)
+        behavior_layout.addWidget(self._skip_own_messages)
+
         self._show_console = QCheckBox(tr("settings.overlay.show_console"))
         self._show_console.setChecked(self._config.show_debug_console)
         behavior_layout.addWidget(self._show_console)
@@ -726,7 +730,7 @@ class SettingsDialog(QDialog):
         layout.setSpacing(12)
 
         # Title + version
-        title = QLabel(f"WoWTranslator {VERSION}")
+        title = QLabel(f"BabelChat {VERSION}")
         title.setStyleSheet("color: #FFD200; font-size: 18px; font-weight: bold;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
@@ -750,24 +754,68 @@ class SettingsDialog(QDialog):
 
         # GitHub
         github = QLabel(
-            '<a href="https://github.com/Yumash/WoWTranslator" '
-            'style="color: #FFD200;">GitHub: Yumash/WoWTranslator</a>'
+            '<a href="https://github.com/Yumash/BabelChat" '
+            'style="color: #FFD200;">GitHub: Yumash/BabelChat</a>'
         )
         github.setAlignment(Qt.AlignmentFlag.AlignCenter)
         github.setOpenExternalLinks(True)
         layout.addWidget(github)
 
-        # Separator
-        sep = QLabel()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background: #444;")
-        layout.addWidget(sep)
+        # ── Glossary credit ──
+        sep1 = QLabel()
+        sep1.setFixedHeight(1)
+        sep1.setStyleSheet("background: #444;")
+        layout.addWidget(sep1)
 
-        # Donate section
-        donate_title = QLabel(tr("about.donate"))
-        donate_title.setStyleSheet("color: #FFD200; font-size: 13px; font-weight: bold;")
-        donate_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(donate_title)
+        glossary_credit = QLabel(tr("about.glossary_credit"))
+        glossary_credit.setStyleSheet("color: #ccc; font-size: 11px;")
+        glossary_credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        glossary_credit.setOpenExternalLinks(True)
+        glossary_credit.setWordWrap(True)
+        layout.addWidget(glossary_credit)
+
+        # ── Donate: Pirson (WoW Dictionary) ──
+        sep2 = QLabel()
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background: #444;")
+        layout.addWidget(sep2)
+
+        dict_donate_title = QLabel(tr("about.donate_dictionary"))
+        dict_donate_title.setStyleSheet("color: #FFD200; font-size: 12px; font-weight: bold;")
+        dict_donate_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(dict_donate_title)
+
+        dict_donate_desc = QLabel(tr("about.donate_dictionary_desc"))
+        dict_donate_desc.setStyleSheet("color: #999; font-size: 11px;")
+        dict_donate_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dict_donate_desc.setWordWrap(True)
+        layout.addWidget(dict_donate_desc)
+
+        pirson_link = QLabel(
+            '<a href="https://buymeacoffee.com/franciscorb" '
+            'style="color: #FFD200; font-size: 12px;">'
+            'Buy Me a Coffee — Pirson</a>'
+        )
+        pirson_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pirson_link.setOpenExternalLinks(True)
+        layout.addWidget(pirson_link)
+
+        # ── Donate: Companion App ──
+        sep3 = QLabel()
+        sep3.setFixedHeight(1)
+        sep3.setStyleSheet("background: #444;")
+        layout.addWidget(sep3)
+
+        app_donate_title = QLabel(tr("about.donate_app"))
+        app_donate_title.setStyleSheet("color: #FFD200; font-size: 12px; font-weight: bold;")
+        app_donate_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(app_donate_title)
+
+        app_donate_desc = QLabel(tr("about.donate_app_desc"))
+        app_donate_desc.setStyleSheet("color: #999; font-size: 11px;")
+        app_donate_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        app_donate_desc.setWordWrap(True)
+        layout.addWidget(app_donate_desc)
 
         for label, addr in [
             ("USDT TRC20", "TGaUz963ZaCoHrfoDDgy1sCvSrK1wsZvcx"),
@@ -827,16 +875,16 @@ class SettingsDialog(QDialog):
             return
 
         if getattr(sys, "frozen", False):
-            src = Path(getattr(sys, "_MEIPASS", "")) / "addon" / "ChatTranslatorHelper"
+            src = Path(getattr(sys, "_MEIPASS", "")) / "addon" / "BabelChat"
         else:
-            src = Path(__file__).resolve().parent.parent / "addon" / "ChatTranslatorHelper"
+            src = Path(__file__).resolve().parent.parent / "addon" / "BabelChat"
 
         if not src.exists():
             self._addon_status.setText(tr("settings.wow.addon_files_missing"))
             self._addon_status.setStyleSheet("color: #FF4040; font-weight: bold;")
             return
 
-        dest = addons_dir / "ChatTranslatorHelper"
+        dest = addons_dir / "BabelChat"
         try:
             if dest.exists():
                 shutil.rmtree(dest)
@@ -863,6 +911,7 @@ class SettingsDialog(QDialog):
         self._config.overlay_opacity = self._opacity_slider.value()
         self._config.overlay_font_size = self._font_size.value()
         self._config.translation_enabled_default = self._translate_default.isChecked()
+        self._config.skip_own_messages = self._skip_own_messages.isChecked()
         self._config.show_debug_console = self._show_console.isChecked()
         self._config.hotkey_toggle_translate = self._hk_toggle.text()
         self._config.hotkey_clipboard_translate = self._hk_clipboard.text()

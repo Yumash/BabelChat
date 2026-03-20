@@ -1,5 +1,6 @@
 """Tests for translation cache."""
 
+import threading
 import time
 
 import pytest
@@ -114,3 +115,61 @@ class TestCachePersistence:
         c2 = TranslationCache(db_path=str(db_path))
         assert c2.get("hello", "EN", "RU") == "привет"
         c2.close()
+
+
+class TestCacheConcurrency:
+    """Test thread-safe concurrent access."""
+
+    def test_concurrent_writes(self, tmp_path):
+        db_path = tmp_path / "concurrent.db"
+        cache = TranslationCache(db_path=str(db_path), memory_size=100)
+        errors: list[Exception] = []
+
+        def writer(thread_id: int) -> None:
+            try:
+                for i in range(20):
+                    cache.put(f"msg_{thread_id}_{i}", "EN", "RU", f"перевод_{thread_id}_{i}")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=writer, args=(t,)) for t in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent write errors: {errors}"
+
+        stats = cache.stats()
+        assert stats["db_entries"] == 200  # 10 threads × 20 writes
+        cache.close()
+
+    def test_concurrent_read_write(self, tmp_path):
+        db_path = tmp_path / "rw.db"
+        cache = TranslationCache(db_path=str(db_path), memory_size=50)
+        cache.put("seed", "EN", "RU", "зерно")
+        errors: list[Exception] = []
+
+        def reader() -> None:
+            try:
+                for _ in range(50):
+                    cache.get("seed", "EN", "RU")
+            except Exception as e:
+                errors.append(e)
+
+        def writer() -> None:
+            try:
+                for i in range(50):
+                    cache.put(f"w_{i}", "EN", "RU", f"п_{i}")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reader) for _ in range(5)]
+        threads += [threading.Thread(target=writer) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent read/write errors: {errors}"
+        cache.close()

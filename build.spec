@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for WoWTranslator single .exe build."""
+"""PyInstaller spec for BabelChat single .exe build."""
 
 a = Analysis(
     ["app/main.py"],
@@ -8,7 +8,7 @@ a = Analysis(
     datas=[
         ("assets/icon.ico", "assets"),
         ("assets/icon.png", "assets"),
-        ("addon/ChatTranslatorHelper", "addon/ChatTranslatorHelper"),
+        ("addon/BabelChat", "addon/BabelChat"),
     ],
     hiddenimports=[
         "lingua",
@@ -67,7 +67,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WoWTranslator",
+    name="BabelChat",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

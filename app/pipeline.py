@@ -78,6 +78,8 @@ class TranslatedMessage:
     original: ChatMessage
     translation: TranslationResult | None
     source_lang: str = ""
+    msg_id: int = 0       # unique ID for streaming updates
+    is_update: bool = False  # True when this replaces a previous msg_id
 
 
 @dataclass
@@ -95,6 +97,7 @@ class PipelineConfig:
         Channel.WHISPER_FROM, Channel.WHISPER_TO,
         Channel.INSTANCE, Channel.INSTANCE_LEADER,
     })
+    skip_own_messages: bool = True
     translation_enabled: bool = True
     db_path: str = "translations.db"
     use_memory_reader: bool = True  # Reads addon buffer from WoW process memory
@@ -117,6 +120,7 @@ class TranslationPipeline:
         self._lock = threading.Lock()
 
         self._cache = TranslationCache(db_path=config.db_path)
+        self._cache.cleanup()  # remove expired entries on startup
         self._detector = ChatLanguageDetector(own_language=config.own_language)
         self._translator = TranslatorService(api_key=config.deepl_api_key)
         self._watcher = ChatLogWatcher(config.chatlog_path, self._on_new_line)
@@ -124,7 +128,10 @@ class TranslationPipeline:
         # Deduplication: track recent (author, text) to avoid double-delivery
         # when both memory reader and file watcher deliver the same message
         self._recent_messages: OrderedDict[tuple[str, str], float] = OrderedDict()
-        self._dedup_ttl = 30.0  # seconds
+        self._dedup_ttl = 60.0  # seconds
+
+        # Streaming: monotonic message ID for progressive rendering
+        self._next_msg_id = 1
 
         # Memory reader (optional, real-time delivery)
         self._memory_watcher = None
@@ -198,33 +205,48 @@ class TranslationPipeline:
         self._cache.close()
         logger.info("Pipeline stopped")
 
-    def _on_new_line(self, line: str) -> None:
-        """Process a new line from the chat log or memory reader."""
+    def _on_new_line(
+        self, line: str, *,
+        dict_translated: bool = False,
+        dict_text: str = "",
+    ) -> None:
+        """Process a new line from the chat log or memory reader.
+
+        Args:
+            line: WoW chat log format line.
+            dict_translated: If True, the addon's dictionary already translated
+                this message inline in chat.
+            dict_text: The dictionary-translated text (with inline annotations).
+        """
         logger.debug("New line: %s", line[:120])
         msg = parse_line(line)
         if msg is None:
             logger.info("Parse returned None for: %s", line[:150])
             return
 
-        logger.info("Parsed: [%s] %s: %s", msg.channel.value, msg.author, msg.text[:60])
+        logger.info("Parsed: [%s] %s: %s (dict=%s)", msg.channel.value, msg.author, msg.text[:60], dict_translated)
+
+        # Snapshot config for consistent reads within this method
+        cfg = self._config
 
         # Deduplicate: both memory reader and file watcher may deliver same message
         dedup_key = (msg.author, msg.text)
-        now = time.time()
-        if dedup_key in self._recent_messages:
-            logger.debug("Duplicate message from %s, skipping", msg.author)
-            return
-        self._recent_messages[dedup_key] = now
-        # Evict old entries
-        while self._recent_messages:
-            oldest_key, oldest_ts = next(iter(self._recent_messages.items()))
-            if now - oldest_ts > self._dedup_ttl:
-                self._recent_messages.pop(oldest_key)
-            else:
-                break
+        now = time.monotonic()
+        with self._lock:
+            if dedup_key in self._recent_messages:
+                logger.debug("Duplicate message from %s, skipping", msg.author)
+                return
+            self._recent_messages[dedup_key] = now
+            # Evict old entries
+            while self._recent_messages:
+                oldest_key, oldest_ts = next(iter(self._recent_messages.items()))
+                if now - oldest_ts > self._dedup_ttl:
+                    self._recent_messages.pop(oldest_key)
+                else:
+                    break
 
         # Filter by channel
-        if msg.channel not in self._config.enabled_channels:
+        if msg.channel not in cfg.enabled_channels:
             logger.debug("Channel %s not enabled", msg.channel)
             return
 
@@ -234,22 +256,36 @@ class TranslationPipeline:
             logger.debug("NPC message filtered: %s", msg.author[:40])
             return
 
-        # Own messages — show in overlay but never translate
-        if self._config.own_character and msg.author == self._config.own_character:
+        # Own messages — show in overlay but skip translation when configured
+        own_char = cfg.own_character
+        if not own_char and self._memory_watcher:
+            own_char = self._memory_watcher.player_name
+        if (
+            cfg.skip_own_messages
+            and own_char
+            and msg.author == own_char
+        ):
+            logger.info("Skip own message (no translate): %s", msg.text[:60])
             self._on_message(TranslatedMessage(original=msg, translation=None))
             return
 
         # Translation disabled — still emit message without translation
-        if not self._config.translation_enabled:
+        if not cfg.translation_enabled:
             self._on_message(TranslatedMessage(original=msg, translation=None))
             return
+
+        # Dictionary-translated by addon — ignore addon dict, use DeepL instead.
+        # Addon dict adds inline translations like "speed(Скорость)" which are
+        # redundant when companion app does full DeepL translation.
+        if dict_translated:
+            logger.info("Dict message ignored, using DeepL: %s", msg.text[:60])
 
         # Clean and validate text
         cleaned_text = clean_message_text(msg.text)
         if is_empty_or_whitespace(cleaned_text):
             return
 
-        target_lang = self._config.target_lang
+        target_lang = cfg.target_lang
 
         # Check abbreviations before language detection (catches short gg/ty/bb
         # that would fail MIN_TEXT_LENGTH in the detector)
@@ -333,6 +369,14 @@ class TranslationPipeline:
             logger.info("WoW terms expanded: %r → %r", text_to_translate[:60], wow_expanded[:60])
             text_to_translate = wow_expanded
 
+        # --- STREAMING: emit original immediately, then update with translation ---
+        msg_id = self._next_msg_id
+        self._next_msg_id += 1
+        self._on_message(TranslatedMessage(
+            original=msg, translation=None,
+            source_lang=source_lang, msg_id=msg_id,
+        ))
+
         # Translate via API (this blocks — called from watchdog thread)
         src_display = source_lang or "auto"
         logger.info("Calling DeepL: %s→%s %r", src_display, target_lang, text_to_translate[:60])
@@ -345,11 +389,10 @@ class TranslationPipeline:
         logger.info("DeepL result: success=%s, translated=%r", result.success, translated_preview)
 
         # If DeepL auto-detected own language, skip (e.g. "zerg" detected as RU)
-        own_deepl = _LINGUA_TO_DEEPL.get(self._config.own_language, "")
+        own_deepl = _LINGUA_TO_DEEPL.get(cfg.own_language, "")
         if result.success and not source_lang and result.source_lang == own_deepl:
             logger.info("DeepL detected own lang (%s), skipping: %r", own_deepl, cleaned_text[:60])
-            self._on_message(TranslatedMessage(original=msg, translation=None))
-            return
+            return  # original already emitted above
 
         # Restore preserved tokens in translated text
         if result.success and replacements:
@@ -365,6 +408,8 @@ class TranslationPipeline:
             cache_src = source_lang or result.source_lang
             self._cache.put(cleaned_text, cache_src, target_lang, result.translated)
 
+        # --- STREAMING: emit translation update ---
         self._on_message(TranslatedMessage(
             original=msg, translation=result, source_lang=source_lang,
+            msg_id=msg_id, is_update=True,
         ))

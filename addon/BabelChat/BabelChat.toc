@@ -1,0 +1,63 @@
+## Interface: 120001, 120005
+## Title: |cffd597ffBabelChat|r
+## Notes: |cFF33CCFFReal-time chat translation — built-in dictionary + companion app overlay.|r
+## Notes-ruRU: |cFF33CCFFПеревод чата в реальном времени — встроенный словарь + оверлей через приложение-компаньон.|r
+## Notes-esES: |cFF33CCFFTraducción de chat en tiempo real — diccionario integrado + overlay con app acompañante.|r
+## Notes-esMX: |cFF33CCFFTraducción de chat en tiempo real — diccionario integrado + overlay con app acompañante.|r
+## Author: Andrey Yumashev, Pirson
+## Version: 3.0.0
+## X-License: MIT
+## X-Website: https://github.com/Yumash/BabelChat
+
+# https://warcraft.wiki.gg/wiki/Addon_Categories
+## Category: Chat
+## Category-ruRU: Чат
+## Category-esES: Chat
+
+## SavedVariables: BabelChatDB
+## OptionalDeps: LibStub, CallbackHandler, LibDataBroker-1.1, LibDBIcon-1.0
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\LibBabble-3.0\LibBabble-3.0.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_esES.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_esMX.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_deDE.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_frFR.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_itIT.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_koKR.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_ptBR.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_ruRU.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_zhCN.lua
+Libs\LibBabble-SubZone-3.0\LibBabble-SubZone-3.0_zhTW.lua
+Libs\LibBabble-Class-3.0\LibBabble-Class-3.0.lua
+Libs\LibBabble-Race-3.0\LibBabble-Race-3.0.lua
+Libs\LibBabble-ItemSet-3.0\LibBabble-ItemSet-3.0.lua
+Libs\LibBabble-CreatureType-3.0\LibBabble-CreatureType-3.0.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+# Localization
+Locales.lua
+
+# Dictionary data (314 entries x 14 languages)
+Data\Social.lua
+Data\Combate.lua
+Data\Clases.lua
+Data\Roles.lua
+Data\Grupos.lua
+Data\Hermandad.lua
+Data\Profesiones.lua
+Data\Comercio.lua
+Data\Estadisticas.lua
+Data\Estado.lua
+Data\Mazz_Raid.lua
+Data\Slang.lua
+
+# Engine
+DictEngine.lua
+CompanionBuffer.lua
+Config.lua
+Core.lua
