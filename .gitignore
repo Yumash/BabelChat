@@ -42,3 +42,7 @@ dist/
 
 # SQLite
 *.db
+
+# Source media (originals)
+babelchat.jpg
+20260319-*.mp4

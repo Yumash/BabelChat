@@ -29,9 +29,7 @@
 ---
 
 <p align="center">
-  <img src="assets/demo.gif" alt="BabelChat Demo" width="700" />
-  <br>
-  <a href="assets/demo.mp4">Watch full demo (43s)</a>
+  <img src="assets/demo.webp" alt="BabelChat Demo" width="700" />
 </p>
 
 ## The Problem
