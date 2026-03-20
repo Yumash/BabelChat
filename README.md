@@ -118,7 +118,15 @@ The delay comes from the DeepL API round-trip — your text travels to DeepL's s
 
 WoW's Lua sandbox **cannot make HTTP requests**. The addon can capture chat and show UI, but cannot call DeepL or any translation API. The companion app bridges this gap by reading the addon's memory buffer from outside the game.
 
-This is the same approach used by **WeakAuras Companion** and **WarcraftLogs** — read-only memory access, fully compliant with Blizzard's Terms of Service.
+BabelChat only **reads** memory — it never writes, injects, or automates anything. Warden (WoW's anti-cheat) does not flag read-only access.
+
+> **Why not just read WoWChatLog.txt?** We tried. WoW buffers the chat log file with a ~4KB write buffer and flushes unpredictably — delays range from 1 to 5+ minutes. Messages arrive in random-order bursts, not in real time. For a translator, that's useless. Our addon writes to a Lua string in memory, and the companion reads it via ReadProcessMemory every 250ms — giving us sub-second latency.
+>
+> For comparison: **WeakAuras Companion** reads SavedVariables files from disk (minutes of delay, needs `/reload`). **WarcraftLogs** tails the combat log file (fast for combat events, but not available for chat). **No existing companion app achieves real-time chat reading** — BabelChat's memory-reading approach is unique in the ecosystem.
+
+## Upgrading from ChatTranslatorHelper
+
+If you used our previous addon (ChatTranslatorHelper, TWW era), BabelChat automatically migrates your settings. Just install BabelChat and delete the old `ChatTranslatorHelper` folder from `Interface/AddOns/`.
 
 ## Installation
 
@@ -181,7 +189,7 @@ Adding a new term is simple. Edit the relevant `addon/BabelChat/Data/*.lua` file
 
 | Aspect | Status |
 |--------|--------|
-| Memory reading | Read-only. Same as WeakAuras Companion, WarcraftLogs |
+| Memory reading | Read-only. No writing, no injection. Warden does not flag read-only access |
 | Overlay | Allowed. Same as Discord Overlay |
 | Addon API | Standard CHAT_MSG_* hooks. Used by every chat addon |
 | No injection | No DLL injection, no hooking, no writing to WoW memory |

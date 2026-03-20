@@ -16,7 +16,7 @@ Extract anywhere (Desktop, Downloads, wherever you like).
 
 Right-click `BabelChat.exe` → **Run as administrator**.
 
-> BabelChat needs admin privileges to read WoW's process memory. This is the same requirement as WarcraftLogs and WeakAuras Companion.
+> BabelChat needs admin privileges to read WoW's process memory via `ReadProcessMemory` (Windows API).
 
 ## Step 3: Setup Wizard
 

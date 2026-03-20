@@ -55,4 +55,6 @@ SEQ|META|key|value                  (META — metadata like player name)
 
 ## ToS Compliance
 
-`ReadProcessMemory` is read-only. Warden (WoW anti-cheat) does not flag external read-only access. Same approach used by WeakAuras Companion and WarcraftLogs.
+`ReadProcessMemory` is read-only. Warden (WoW anti-cheat) does not flag external read-only access.
+
+Note: WeakAuras Companion and WarcraftLogs use file-based approaches (SavedVariables and combat log tailing). BabelChat's direct memory reading is unique — it's the only method that achieves sub-second chat latency, since WoW's chat log (`WoWChatLog.txt`) buffers writes with ~4KB buffer and flushes unpredictably (1-5+ minute delays, messages arrive in random-order bursts).

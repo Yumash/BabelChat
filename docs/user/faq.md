@@ -3,10 +3,13 @@
 ## General
 
 ### Why does BabelChat need Administrator privileges?
-To read WoW's process memory via `ReadProcessMemory`. This is a Windows API that requires elevated privileges. Same requirement as WarcraftLogs and WeakAuras Companion.
+To read WoW's process memory via `ReadProcessMemory`. This is a Windows API that requires elevated privileges.
 
 ### Is this safe? Will I get banned?
-BabelChat only **reads** memory — it never writes, injects, or automates anything. This is the same approach used by WeakAuras Companion and WarcraftLogs. Warden (WoW's anti-cheat) does not flag read-only memory access.
+BabelChat only **reads** memory — it never writes, injects, or automates anything. Warden (WoW's anti-cheat) does not flag read-only memory access.
+
+### Why not just read the chat log file?
+We tried. WoW buffers `WoWChatLog.txt` with a ~4KB write buffer and flushes unpredictably — delays range from 1 to 5+ minutes, messages arrive in random-order bursts. For a real-time translator, that's useless. Our addon writes to a Lua string in memory, and the companion reads it every 250ms — sub-second latency. This approach is unique: WeakAuras Companion reads SavedVariables from disk (needs `/reload`), WarcraftLogs tails the combat log (not available for chat).
 
 ### Why does translation take 0.5-2 seconds?
 The original message appears **instantly**. The translation delay is the round-trip to DeepL's servers (your text → DeepL neural network → translation back). Common phrases (gg, ty, brb, hello) translate instantly from the built-in phrasebook — no API call needed.

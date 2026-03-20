@@ -118,7 +118,15 @@ La demora viene del round-trip a los servidores de DeepL — tu texto viaja, se 
 
 El sandbox Lua de WoW **no puede hacer peticiones HTTP**. El addon captura el chat pero no puede llamar a DeepL. La app acompañante resuelve esto leyendo el buffer del addon desde la memoria del proceso.
 
-Es el mismo enfoque de **WeakAuras Companion** y **WarcraftLogs** — acceso de solo lectura, cumple con los Términos de Servicio de Blizzard.
+BabelChat solo **lee** memoria — nunca escribe, inyecta ni automatiza nada. Warden (anti-cheat de WoW) no detecta acceso de solo lectura.
+
+> **¿Por qué no leer WoWChatLog.txt?** Lo intentamos. WoW almacena el log de chat con un buffer de ~4KB y lo vacía de forma impredecible — retrasos de 1 a 5+ minutos. Los mensajes llegan en ráfagas desordenadas, no en tiempo real. Para un traductor, es inútil. Nuestro addon escribe en una cadena Lua en memoria, y la app la lee via ReadProcessMemory cada 250ms — latencia inferior a un segundo.
+>
+> Para comparar: **WeakAuras Companion** lee archivos SavedVariables del disco (minutos de retraso, necesita `/reload`). **WarcraftLogs** lee el combat log (rápido para eventos de combate, pero no disponible para chat). **Ninguna app existente lee el chat en tiempo real** — el enfoque de lectura de memoria de BabelChat es único.
+
+## Actualización desde ChatTranslatorHelper
+
+Si usabas nuestro addon anterior (ChatTranslatorHelper, era TWW), BabelChat migra automáticamente tus ajustes. Solo instala BabelChat y elimina la carpeta `ChatTranslatorHelper` de `Interface/AddOns/`.
 
 ## Instalación
 
@@ -177,7 +185,7 @@ Edita el archivo `addon/BabelChat/Data/*.lua` correspondiente:
 
 | Aspecto | Estado |
 |---------|--------|
-| Lectura de memoria | Solo lectura. Como WeakAuras Companion, WarcraftLogs |
+| Lectura de memoria | Solo lectura. Sin escritura, sin inyección. Warden no lo detecta |
 | Overlay | Permitido. Como Discord Overlay |
 | API del addon | Hooks estándar CHAT_MSG_*. Usado por todos los addons de chat |
 | Sin inyección | Sin DLL injection, sin hooking, sin escritura en memoria de WoW |
