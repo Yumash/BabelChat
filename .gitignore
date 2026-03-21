@@ -26,8 +26,9 @@ config.json
 overlay_settings.json
 settings_dialog_pos.json
 
-# Logs
+# Logs & lock files
 *.log
+*.lock
 
 # Downloaded addons (research)
 AutoChatLog/
@@ -41,3 +42,7 @@ dist/
 
 # SQLite
 *.db
+
+# Source media (originals)
+babelchat.jpg
+20260319-*.mp4

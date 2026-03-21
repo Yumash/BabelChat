@@ -1,4 +1,4 @@
-"""First-run setup wizard for WoWTranslator — WoW-themed."""
+"""First-run setup wizard for BabelChat — WoW-themed."""
 
 from __future__ import annotations
 
@@ -527,13 +527,13 @@ class SetupWizard(QDialog):
 
     @staticmethod
     def _addon_source_path() -> Path:
-        """Return path to bundled ChatTranslatorHelper addon folder."""
+        """Return path to bundled BabelChat addon folder."""
         if getattr(sys, "frozen", False):
             # PyInstaller onefile: data extracted to _MEIPASS temp dir
             base = Path(getattr(sys, "_MEIPASS", ""))
         else:
             base = Path(__file__).resolve().parent.parent
-        return base / "addon" / "ChatTranslatorHelper"
+        return base / "addon" / "BabelChat"
 
     def _install_addon(self) -> None:
         wow = self._wow_path_input.text().strip()
@@ -564,7 +564,7 @@ class SetupWizard(QDialog):
             )
             return
 
-        dest = addons_dir / "ChatTranslatorHelper"
+        dest = addons_dir / "BabelChat"
         try:
             if dest.exists():
                 shutil.rmtree(dest)

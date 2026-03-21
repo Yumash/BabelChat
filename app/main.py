@@ -1,9 +1,10 @@
-"""WoWTranslator — entry point."""
+"""BabelChat — entry point."""
 
 from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import signal
 import sys
 
@@ -30,7 +31,7 @@ logging.basicConfig(
     level=logging.INFO,
     format=_LOG_FMT,
     handlers=[
-        logging.FileHandler("wct_app.log", encoding="utf-8", mode="w"),
+        logging.FileHandler("babelchat.log", encoding="utf-8", mode="w"),
     ],
 )
 logger = logging.getLogger(__name__)
@@ -113,6 +114,7 @@ def _build_pipeline_config(config: AppConfig) -> PipelineConfig:
         target_lang=config.target_language,
         own_language=own_lang,
         enabled_channels=enabled_channels,
+        skip_own_messages=config.skip_own_messages,
         translation_enabled=config.translation_enabled_default,
     )
 
@@ -149,10 +151,14 @@ def _setup_console(visible: bool) -> None:
     global _console_initialized
     kernel32 = ctypes.windll.kernel32
     if visible and not _console_initialized:
+        # AllocConsole returns 0 if console already exists — that's OK
         kernel32.AllocConsole()
-        # Redirect Python stdout/stderr to the new console
-        sys.stdout = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
-        sys.stderr = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+        try:
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+        except OSError:
+            # Fallback: console handle not available (rare edge case)
+            return
         # Add console stream handler (file handler was set up in basicConfig)
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setFormatter(logging.Formatter(_LOG_FMT))
@@ -165,11 +171,45 @@ def _setup_console(visible: bool) -> None:
         _console_initialized = True
     hwnd = kernel32.GetConsoleWindow()
     if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 1 if visible else 0)
+        ctypes.windll.user32.ShowWindow(hwnd, 5 if visible else 0)
+
+
+_LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "babelchat.lock")
+
+
+def _ensure_single_instance() -> None:
+    """Ensure only one instance is running. Kill the old one if found."""
+    lock_path = os.path.abspath(_LOCK_FILE)
+    # Check if old instance is running
+    if os.path.exists(lock_path):
+        try:
+            with open(lock_path) as f:
+                old_pid = int(f.read().strip())
+            # Try to kill old process
+            kernel32 = ctypes.windll.kernel32
+            PROCESS_TERMINATE = 0x0001
+            SYNCHRONIZE = 0x00100000
+            handle = kernel32.OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, False, old_pid)
+            if handle:
+                kernel32.TerminateProcess(handle, 0)
+                # Wait up to 2 seconds for it to die
+                kernel32.WaitForSingleObject(handle, 2000)
+                kernel32.CloseHandle(handle)
+                logger.info("Killed old instance PID %d", old_pid)
+            else:
+                logger.info("Old PID %d no longer running", old_pid)
+        except Exception as e:
+            logger.warning("Failed to kill old instance: %s", e)
+    # Write our PID
+    with open(lock_path, "w") as f:
+        f.write(str(os.getpid()))
 
 
 def main() -> int:
     load_dotenv()
+
+    # Single instance guard — kill old instance if running
+    _mutex = _ensure_single_instance()
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -268,8 +308,12 @@ def main() -> int:
     history: list[TranslatedMessage] = []
     for _line in _history_lines:
         _msg = parse_line(_line)
-        if _msg and _msg.channel in pipeline_config.enabled_channels:
-            history.append(TranslatedMessage(original=_msg, translation=None))
+        if not _msg or _msg.channel not in pipeline_config.enabled_channels:
+            continue
+        # Skip NPC messages (names with spaces) in Say/Yell
+        if _msg.channel in (Channel.SAY, Channel.YELL) and " " in _msg.author:
+            continue
+        history.append(TranslatedMessage(original=_msg, translation=None))
     overlay.load_history(history)
 
     pipeline_thread.start()
@@ -299,7 +343,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, lambda *_: shutdown())
     app.aboutToQuit.connect(lambda: (hotkey_mgr.stop(), pipeline_thread.stop()))
 
-    logger.info("WoWTranslator started")
+    logger.info("BabelChat started")
     return app.exec()
 
 

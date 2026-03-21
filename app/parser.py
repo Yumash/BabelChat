@@ -437,15 +437,28 @@ _ADDON_CHANNEL_MAP: dict[str, Channel] = {
 def parse_addon_line(line: str) -> tuple[ChatMessage | None, int]:
     """Parse a line from the addon's memory buffer.
 
-    Format: SEQ|CHANNEL|Author-Server|MessageText
+    Format v2.1: SEQ|KIND|EVENT|author|text
+    (KIND is RAW or DICT; actual parsing done in memory_reader.py)
+
+    Legacy format: SEQ|CHANNEL|Author-Server|MessageText
 
     Returns (ChatMessage or None, sequence_number).
     """
-    parts = line.split("|", 3)
+    parts = line.split("|", 4)
     if len(parts) < 4:
         return None, 0
 
-    seq_str, channel_str, author_full, text = parts
+    seq_str = parts[0]
+    # v2.1 format: skip KIND field, use EVENT as channel
+    if parts[1] in ("RAW", "DICT") and len(parts) >= 5:
+        channel_str = parts[2]
+        author_full = parts[3]
+        text = parts[4]
+    else:
+        # Legacy format
+        channel_str = parts[1]
+        author_full = parts[2]
+        text = parts[3] if len(parts) > 3 else ""
 
     try:
         seq = int(seq_str)

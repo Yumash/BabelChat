@@ -238,6 +238,7 @@ class ChatOverlay(QWidget):
         self._target_lang = "EN"
         self._thread_pool = QThreadPool()
         self._messages: list[TranslatedMessage] = []
+        self._max_messages = 500  # cap to prevent unbounded growth
         self._minimized = False
         self._restored_size: tuple[int, int] | None = None
 
@@ -281,7 +282,7 @@ class ChatOverlay(QWidget):
 
         # Title bar
         title_bar = QHBoxLayout()
-        title_label = QLabel(f"WoWTranslator {VERSION}")
+        title_label = QLabel(f"BabelChat {VERSION}")
         title_label.setStyleSheet(
             "color: #FFD200; font-size: 11px; font-weight: bold; padding: 2px;"
         )
@@ -378,6 +379,7 @@ class ChatOverlay(QWidget):
         # Chat message area
         self._chat_area = QTextEdit()
         self._chat_area.setReadOnly(True)
+        self._chat_area.document().setMaximumBlockCount(1500)
         self._chat_area.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -529,8 +531,29 @@ class ChatOverlay(QWidget):
 
     @pyqtSlot(object)
     def _on_message(self, msg: TranslatedMessage) -> None:
-        """Handle a new translated message on the GUI thread."""
+        """Handle a new translated message on the GUI thread.
+
+        Supports streaming updates: if msg.is_update is True, replaces the
+        matching msg_id in _messages and re-renders the last message.
+        """
+        if msg.is_update and msg.msg_id:
+            # Find and replace the original message by msg_id
+            for i in range(len(self._messages) - 1, -1, -1):
+                if self._messages[i].msg_id == msg.msg_id:
+                    self._messages[i] = msg
+                    break
+            # Re-render: update the last line in chat area
+            filter_channels = _FILTER_CHANNELS.get(self._active_filter, set(Channel))
+            if msg.original.channel in filter_channels:
+                self._update_last_message(msg)
+            return
+
         self._messages.append(msg)
+        # Trim old messages to prevent unbounded growth
+        if len(self._messages) > self._max_messages:
+            self._messages = self._messages[-self._max_messages:]
+            self._rerender_chat()
+            return
         # Only render if it passes the current filter
         filter_channels = _FILTER_CHANNELS.get(self._active_filter, set(Channel))
         if msg.original.channel in filter_channels:
@@ -593,6 +616,22 @@ class ChatOverlay(QWidget):
         self._chat_area.verticalScrollBar().setValue(
             self._chat_area.verticalScrollBar().maximum()
         )
+
+    def _update_last_message(self, msg: TranslatedMessage) -> None:
+        """Update the last rendered message with translation (streaming).
+
+        Removes the last line from the chat area and re-renders it with
+        the translation attached.
+        """
+        cursor = self._chat_area.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        # Select from the last newline to the end
+        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock, QTextCursor.MoveMode.KeepAnchor)
+        # Also select the preceding newline
+        cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+        # Re-render the message (now with translation)
+        self._render_message(msg)
 
     def _rerender_chat(self) -> None:
         """Clear and re-render all messages matching the current filter."""

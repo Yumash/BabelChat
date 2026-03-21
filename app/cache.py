@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -46,6 +47,7 @@ class TranslationCache:
         self._ttl = ttl
         self._memory: OrderedDict[CacheKey, tuple[str, float]] = OrderedDict()
         self._db_path = str(db_path)
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.executescript(_SCHEMA)
 
@@ -56,57 +58,59 @@ class TranslationCache:
         """
         key: CacheKey = (text, source_lang.upper(), target_lang.upper())
 
-        # Level 1: memory
-        if key in self._memory:
-            value, created_at = self._memory[key]
-            if time.time() - created_at > self._ttl:
-                del self._memory[key]
-            else:
-                self._memory.move_to_end(key)
-                return value
+        with self._lock:
+            # Level 1: memory
+            if key in self._memory:
+                value, created_at = self._memory[key]
+                if time.time() - created_at > self._ttl:
+                    del self._memory[key]
+                else:
+                    self._memory.move_to_end(key)
+                    return value
 
-        # Level 2: SQLite
-        row = self._conn.execute(
-            "SELECT translated, created_at FROM translations "
-            "WHERE source_text = ? AND source_lang = ? AND target_lang = ?",
-            key,
-        ).fetchone()
-
-        if row is None:
-            return None
-
-        translated, created_at = row
-
-        # Check TTL
-        if time.time() - created_at > self._ttl:
-            self._conn.execute(
-                "DELETE FROM translations "
+            # Level 2: SQLite
+            row = self._conn.execute(
+                "SELECT translated, created_at FROM translations "
                 "WHERE source_text = ? AND source_lang = ? AND target_lang = ?",
                 key,
-            )
-            self._conn.commit()
-            return None
+            ).fetchone()
 
-        # Promote to memory
-        self._memory_put(key, translated, created_at)
-        return translated
+            if row is None:
+                return None
+
+            translated, created_at = row
+
+            # Check TTL
+            if time.time() - created_at > self._ttl:
+                self._conn.execute(
+                    "DELETE FROM translations "
+                    "WHERE source_text = ? AND source_lang = ? AND target_lang = ?",
+                    key,
+                )
+                self._conn.commit()
+                return None
+
+            # Promote to memory
+            self._memory_put(key, translated, created_at)
+            return translated
 
     def put(self, text: str, source_lang: str, target_lang: str, translated: str) -> None:
         """Store translation in both cache levels."""
         key: CacheKey = (text, source_lang.upper(), target_lang.upper())
         now = time.time()
 
-        # Level 1: memory
-        self._memory_put(key, translated, now)
+        with self._lock:
+            # Level 1: memory
+            self._memory_put(key, translated, now)
 
-        # Level 2: SQLite
-        self._conn.execute(
-            "INSERT OR REPLACE INTO translations "
-            "(source_text, source_lang, target_lang, translated, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (*key, translated, now),
-        )
-        self._conn.commit()
+            # Level 2: SQLite
+            self._conn.execute(
+                "INSERT OR REPLACE INTO translations "
+                "(source_text, source_lang, target_lang, translated, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (*key, translated, now),
+            )
+            self._conn.commit()
 
     def _memory_put(self, key: CacheKey, value: str, created_at: float | None = None) -> None:
         """Add to memory LRU, evicting oldest if full."""
@@ -122,24 +126,27 @@ class TranslationCache:
     def cleanup(self) -> int:
         """Remove expired entries from SQLite. Returns count of deleted rows."""
         cutoff = time.time() - self._ttl
-        cursor = self._conn.execute(
-            "DELETE FROM translations WHERE created_at < ?", (cutoff,)
-        )
-        self._conn.commit()
-        deleted = cursor.rowcount
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM translations WHERE created_at < ?", (cutoff,)
+            )
+            self._conn.commit()
+            deleted = cursor.rowcount
         if deleted:
             logger.info("Cleaned up %d expired translations", deleted)
         return deleted
 
     def stats(self) -> dict[str, int]:
         """Return cache statistics."""
-        row = self._conn.execute("SELECT COUNT(*) FROM translations").fetchone()
-        return {
-            "memory_entries": len(self._memory),
-            "memory_max": self._memory_size,
-            "db_entries": row[0] if row else 0,
-        }
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) FROM translations").fetchone()
+            return {
+                "memory_entries": len(self._memory),
+                "memory_max": self._memory_size,
+                "db_entries": row[0] if row else 0,
+            }
 
     def close(self) -> None:
         """Close database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

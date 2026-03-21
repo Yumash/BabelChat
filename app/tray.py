@@ -1,4 +1,4 @@
-"""System tray icon for WoWTranslator."""
+"""System tray icon for BabelChat."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class TrayIcon(QSystemTrayIcon):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(_create_default_icon(), parent)
-        self.setToolTip("WoWTranslator")
+        self.setToolTip("BabelChat")
         self._overlay_visible = True
 
         self._menu = QMenu()

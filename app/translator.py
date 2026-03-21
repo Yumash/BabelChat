@@ -111,6 +111,13 @@ class TranslatorService:
                 if attempt < self._max_retries - 1:
                     delay = self._retry_delay * (2 ** attempt)
                     time.sleep(delay)
+            except Exception as e:
+                logger.error("Unexpected translation error: %s", e)
+                return TranslationResult(
+                    original=text, translated=text,
+                    source_lang=source_lang or "", target_lang=target_lang,
+                    success=False, error=f"unexpected: {e}",
+                )
 
         return TranslationResult(
             original=text, translated=text,

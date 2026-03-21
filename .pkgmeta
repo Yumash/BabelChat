@@ -1,0 +1,35 @@
+package-as: BabelChat
+
+enable-nolib-creation: no
+
+move-folders:
+  addon/BabelChat: BabelChat
+
+ignore:
+  - .git
+  - .github
+  - .gitignore
+  - .claude
+  - .claude-lib
+  - .frai
+  - .rag
+  - app
+  - assets
+  - build
+  - dist
+  - temp
+  - tests
+  - build.spec
+  - pyproject.toml
+  - requirements.txt
+  - CLAUDE.md
+  - "*.lock"
+  - "*.log"
+  - "*.pyc"
+  - __pycache__
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+license-output: LICENSE

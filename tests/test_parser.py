@@ -1,7 +1,8 @@
 """Tests for WoW Chat Log parser."""
 
+import pytest
 
-from app.parser import Channel, parse_line
+from app.parser import Channel, parse_addon_line, parse_line
 
 
 class TestParseChannelMessages:
@@ -134,3 +135,135 @@ class TestParseEdgeCases:
         assert msg is not None
         assert msg.author == "Кириллик"
         assert msg.server == "Сервер"
+
+
+class TestParserRobustness:
+    """Robustness tests for edge cases, malformed input, and Unicode."""
+
+    def test_wow_color_codes_in_message(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: |cff00ff00Green text|r normal'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "|cff00ff00" in msg.text or "Green text" in msg.text
+
+    def test_message_with_pipe_chars(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: result: 5|10 score'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "5|10" in msg.text
+
+    def test_truncated_line_no_text(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server:'
+        msg = parse_line(line)
+        # Should return None or empty text, not crash
+        assert msg is None or msg.text == ""
+
+    def test_empty_author(self):
+        line = '2/15 21:30:45.123  [Party] : some text'
+        msg = parse_line(line)
+        # Should handle gracefully
+        assert msg is None or msg.author == ""
+
+    def test_unicode_chinese(self):
+        line = '2/15 21:30:45.123  [Party] 玩家-服务器: 大家好世界'
+        msg = parse_line(line)
+        assert msg is not None
+        assert msg.text == "大家好世界"
+
+    def test_unicode_korean(self):
+        line = '2/15 21:30:45.123  [Say] 플레이어-서버: 안녕하세요'
+        msg = parse_line(line)
+        assert msg is not None
+        assert msg.text == "안녕하세요"
+
+    def test_unicode_emoji(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: nice pull 🎉🔥'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "🎉" in msg.text
+
+    def test_very_long_message(self):
+        long_text = "a" * 1500
+        line = f'2/15 21:30:45.123  [Party] Player-Server: {long_text}'
+        msg = parse_line(line)
+        assert msg is not None
+        assert len(msg.text) >= 1000
+
+    def test_null_bytes_in_line(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: hello\x00world'
+        # Should not crash
+        try:
+            parse_line(line)
+        except Exception:
+            pytest.fail("parse_line raised on null bytes")
+
+    def test_only_whitespace_text(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server:    '
+        msg = parse_line(line)
+        assert msg is None or msg.text.strip() == ""
+
+    def test_multiple_colons(self):
+        line = '2/15 21:30:45.123  [Raid] Leader-Server: time: 12:30: pull now: go'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "12:30" in msg.text
+        assert "pull now" in msg.text
+
+    def test_special_chars_in_text(self):
+        line = '2/15 21:30:45.123  [Guild] Player-Server: <AFK> [Away] {brb} (5min)'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "<AFK>" in msg.text
+
+    def test_tab_in_message(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: col1\tcol2\tcol3'
+        msg = parse_line(line)
+        assert msg is not None
+
+    def test_mixed_cyrillic_latin(self):
+        line = '2/15 21:30:45.123  [Party] Player-Server: привет hello мир world'
+        msg = parse_line(line)
+        assert msg is not None
+        assert "привет" in msg.text
+        assert "hello" in msg.text
+
+    def test_completely_invalid_timestamp(self):
+        line = 'NOT-A-TIMESTAMP  [Party] Player-Server: hello'
+        msg = parse_line(line)
+        assert msg is None
+
+    def test_missing_brackets(self):
+        line = '2/15 21:30:45.123  Party Player-Server: hello'
+        msg = parse_line(line)
+        assert msg is None
+
+
+class TestParseAddonLine:
+    """Tests for parse_addon_line (v2.1 and legacy formats)."""
+
+    def test_raw_v21_format(self):
+        line = "42|RAW|SAY|Thrall-Sargeras|Hello world"
+        msg, seq = parse_addon_line(line)
+        assert seq == 42
+        assert msg is not None
+        assert msg.channel == Channel.SAY
+        assert msg.author == "Thrall"
+        assert msg.text == "Hello world"
+
+    def test_dict_v21_format(self):
+        line = "5|DICT|GUILD|Player-Server|some text with terms"
+        msg, seq = parse_addon_line(line)
+        assert seq == 5
+        assert msg is not None
+        assert msg.channel == Channel.GUILD
+
+    def test_invalid_seq(self):
+        line = "abc|RAW|SAY|Player|hello"
+        msg, seq = parse_addon_line(line)
+        assert msg is None
+        assert seq == 0
+
+    def test_too_few_parts(self):
+        line = "1|RAW"
+        msg, seq = parse_addon_line(line)
+        assert msg is None

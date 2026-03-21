@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v1.0.0)"
+        description: "Tag to build (e.g. v3.0.0, v3.0.0-beta.1)"
         required: true
 
 permissions:
@@ -32,21 +32,27 @@ jobs:
       - name: Build .exe
         run: pyinstaller build.spec
 
-      - name: Package
+      - name: Package companion app
         run: |
-          Compress-Archive -Path dist\WoWTranslator.exe -DestinationPath dist\WoWTranslator.zip
+          Compress-Archive -Path dist\BabelChat.exe -DestinationPath dist\BabelChat.zip
 
-      - name: Compute checksum
+      - name: Package addon for CurseForge
         run: |
-          $hash = (Get-FileHash dist\WoWTranslator.zip -Algorithm SHA256).Hash
-          "$hash  WoWTranslator.zip" | Out-File dist\checksums.txt -Encoding utf8
+          Compress-Archive -Path addon\BabelChat -DestinationPath dist\BabelChat-Addon.zip
+
+      - name: Compute checksums
+        run: |
+          $h1 = (Get-FileHash dist\BabelChat.zip -Algorithm SHA256).Hash
+          $h2 = (Get-FileHash dist\BabelChat-Addon.zip -Algorithm SHA256).Hash
+          "$h1  BabelChat.zip`n$h2  BabelChat-Addon.zip" | Out-File dist\checksums.txt -Encoding utf8
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-package
           path: |
-            dist/WoWTranslator.zip
+            dist/BabelChat.zip
+            dist/BabelChat-Addon.zip
             dist/checksums.txt
 
   release:
@@ -54,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -64,24 +72,63 @@ jobs:
       - name: Extract changelog
         id: changelog
         run: |
-          # Extract the latest version section from CHANGELOG.md
           awk '/^## \[/{if(found) exit; found=1; next} found{print}' CHANGELOG.md > release_notes.md
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           cat release_notes.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Determine tag
+      - name: Determine tag and prerelease
         id: tag
-        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if [[ "$TAG" =~ -beta|-rc|-alpha ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: WoWTranslator ${{ steps.tag.outputs.tag }}
+          name: BabelChat ${{ steps.tag.outputs.tag }}
           body: ${{ steps.changelog.outputs.notes }}
           files: |
-            release/WoWTranslator.zip
+            release/BabelChat.zip
+            release/BabelChat-Addon.zip
             release/checksums.txt
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
+
+  # ── CurseForge Upload ──────────────────────────────────────
+  # Uncomment after creating project on CurseForge and adding secrets:
+  #   CF_API_KEY: CurseForge API token (Authors > API Tokens)
+  #
+  # curseforge:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: ${{ !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ github.event.inputs.tag || github.ref }}
+  #
+  #     - name: Download addon artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: release-package
+  #         path: release/
+  #
+  #     - name: Upload to CurseForge
+  #       uses: itsmeow/curseforge-upload@v3
+  #       with:
+  #         token: ${{ secrets.CF_API_KEY }}
+  #         project_id: YOUR_PROJECT_ID_HERE
+  #         game_endpoint: wow
+  #         file_path: release/BabelChat-Addon.zip
+  #         display_name: "BabelChat ${{ github.ref_name }}"
+  #         game_versions: "Retail,12.0.5"
+  #         release_type: release
+  #         changelog: "See https://github.com/Yumash/BabelChat/releases"
+  #         changelog_type: text

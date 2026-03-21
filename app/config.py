@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import winreg
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -38,7 +40,7 @@ class AppConfig:
     # Languages
     ui_language: str = "RU"
     own_language: str = "RU"
-    target_language: str = "EN"
+    target_language: str = "ES"
 
     # Overlay
     overlay_opacity: int = 180
@@ -63,28 +65,59 @@ class AppConfig:
     channels_instance: bool = True
 
     # Translation
+    skip_own_messages: bool = True
     translation_enabled_default: bool = True
 
     # Debug
     show_debug_console: bool = False
 
     def save(self, path: str = CONFIG_FILE) -> None:
-        """Save config to JSON file."""
-        Path(path).write_text(
-            json.dumps(asdict(self), indent=2, ensure_ascii=False),
-            encoding="utf-8",
+        """Save config to JSON file atomically (write to temp, then rename)."""
+        target = Path(path)
+        content = json.dumps(asdict(self), indent=2, ensure_ascii=False)
+
+        # Backup existing config
+        if target.exists():
+            bak = target.with_suffix(".json.bak")
+            try:
+                bak.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+            except OSError:
+                logger.warning("Could not create config backup")
+
+        # Atomic write: temp file in same directory, then rename
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(target.parent), suffix=".tmp", prefix="config_"
         )
+        closed = False
+        try:
+            os.write(fd, content.encode("utf-8"))
+            os.close(fd)
+            closed = True
+            os.replace(tmp_path, str(target))
+        except OSError:
+            if not closed:
+                os.close(fd)
+            if Path(tmp_path).exists():
+                Path(tmp_path).unlink()
+            raise
 
     @classmethod
     def load(cls, path: str = CONFIG_FILE) -> AppConfig:
         """Load config from JSON file, using defaults for missing fields."""
-        try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            defaults = asdict(cls())
-            defaults.update(data)
-            return cls(**defaults)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return cls()
+        target = Path(path)
+        for try_path in [target, target.with_suffix(".json.bak")]:
+            try:
+                data = json.loads(try_path.read_text(encoding="utf-8"))
+                defaults = asdict(cls())
+                defaults.update(data)
+                return cls(**defaults)
+            except FileNotFoundError:
+                continue
+            except json.JSONDecodeError:
+                logger.warning("Corrupt config file: %s, trying backup", try_path)
+                continue
+        logger.warning("No valid config found, using defaults")
+        return cls()
 
 
 def detect_wow_path() -> str:
