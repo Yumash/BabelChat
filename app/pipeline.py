@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
-import threading
-import time
-from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +11,7 @@ from pathlib import Path
 from lingua import Language
 
 from app.cache import TranslationCache
+from app.dedup import DeduplicationBuffer
 from app.detector import ChatLanguageDetector
 from app.glossary import expand_wow_terms
 from app.parser import Channel, ChatMessage, parse_line
@@ -21,7 +20,6 @@ from app.phrasebook import lookup_abbreviation as phrasebook_abbrev
 from app.slang import expand_slang
 from app.text_utils import (
     clean_message_text,
-    is_empty_or_whitespace,
     restore_tokens,
     strip_for_translation,
 )
@@ -36,6 +34,12 @@ except ImportError:
     HAS_MEMORY_READER = False
 
 logger = logging.getLogger(__name__)
+
+# Max characters to show in log preview messages
+_LOG_PREVIEW = 60
+
+# Context string sent to DeepL for domain-aware translation
+_DEEPL_CONTEXT = "World of Warcraft multiplayer game raid group chat"
 
 # Lingua Language -> DeepL language code mapping
 _LINGUA_TO_DEEPL: dict[Language, str] = {
@@ -117,7 +121,6 @@ class TranslationPipeline:
     ) -> None:
         self._config = config
         self._on_message = on_message
-        self._lock = threading.Lock()
 
         self._cache = TranslationCache(db_path=config.db_path)
         self._cache.cleanup()  # remove expired entries on startup
@@ -127,11 +130,11 @@ class TranslationPipeline:
 
         # Deduplication: track recent (author, text) to avoid double-delivery
         # when both memory reader and file watcher deliver the same message
-        self._recent_messages: OrderedDict[tuple[str, str], float] = OrderedDict()
-        self._dedup_ttl = 60.0  # seconds
+        self._dedup = DeduplicationBuffer()
 
         # Streaming: monotonic message ID for progressive rendering
-        self._next_msg_id = 1
+        # itertools.count is thread-safe in CPython (atomic C-level next())
+        self._msg_id_counter = itertools.count(1)
 
         # Memory reader (optional, real-time delivery)
         self._memory_watcher = None
@@ -190,7 +193,7 @@ class TranslationPipeline:
                 self._memory_watcher.start()
                 logger.info("Pipeline started (memory reader only)")
                 return
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 logger.warning("Memory reader failed to start: %s", e)
 
         # Fallback: file watcher only
@@ -208,7 +211,7 @@ class TranslationPipeline:
     def _on_new_line(
         self, line: str, *,
         dict_translated: bool = False,
-        dict_text: str = "",
+        **_kwargs: object,
     ) -> None:
         """Process a new line from the chat log or memory reader.
 
@@ -216,7 +219,6 @@ class TranslationPipeline:
             line: WoW chat log format line.
             dict_translated: If True, the addon's dictionary already translated
                 this message inline in chat.
-            dict_text: The dictionary-translated text (with inline annotations).
         """
         logger.debug("New line: %s", line[:120])
         msg = parse_line(line)
@@ -224,26 +226,20 @@ class TranslationPipeline:
             logger.info("Parse returned None for: %s", line[:150])
             return
 
-        logger.info("Parsed: [%s] %s: %s (dict=%s)", msg.channel.value, msg.author, msg.text[:60], dict_translated)
+        logger.info(
+            "Parsed: [%s] %s: %s (dict=%s)",
+            msg.channel.value, msg.author, msg.text[:_LOG_PREVIEW], dict_translated,
+        )
 
-        # Snapshot config for consistent reads within this method
+        # Snapshot config for consistent reads within this method.
+        # Reference assignment is atomic under CPython's GIL, so this is safe
+        # even when update_config() replaces self._config from another thread.
         cfg = self._config
 
         # Deduplicate: both memory reader and file watcher may deliver same message
-        dedup_key = (msg.author, msg.text)
-        now = time.monotonic()
-        with self._lock:
-            if dedup_key in self._recent_messages:
-                logger.debug("Duplicate message from %s, skipping", msg.author)
-                return
-            self._recent_messages[dedup_key] = now
-            # Evict old entries
-            while self._recent_messages:
-                oldest_key, oldest_ts = next(iter(self._recent_messages.items()))
-                if now - oldest_ts > self._dedup_ttl:
-                    self._recent_messages.pop(oldest_key)
-                else:
-                    break
+        if self._dedup.is_duplicate((msg.author, msg.text)):
+            logger.debug("Duplicate message from %s, skipping", msg.author)
+            return
 
         # Filter by channel
         if msg.channel not in cfg.enabled_channels:
@@ -265,7 +261,7 @@ class TranslationPipeline:
             and own_char
             and msg.author == own_char
         ):
-            logger.info("Skip own message (no translate): %s", msg.text[:60])
+            logger.info("Skip own message (no translate): %s", msg.text[:_LOG_PREVIEW])
             self._on_message(TranslatedMessage(original=msg, translation=None))
             return
 
@@ -278,11 +274,11 @@ class TranslationPipeline:
         # Addon dict adds inline translations like "speed(Скорость)" which are
         # redundant when companion app does full DeepL translation.
         if dict_translated:
-            logger.info("Dict message ignored, using DeepL: %s", msg.text[:60])
+            logger.info("Dict message ignored, using DeepL: %s", msg.text[:_LOG_PREVIEW])
 
         # Clean and validate text
         cleaned_text = clean_message_text(msg.text)
-        if is_empty_or_whitespace(cleaned_text):
+        if not cleaned_text.strip():
             return
 
         target_lang = cfg.target_lang
@@ -305,14 +301,14 @@ class TranslationPipeline:
         detected = self._detector.detect(cleaned_text)
         if detected is None:
             # Own language or skip-phrase — emit without translation
-            logger.info("Skip (own lang / skip-phrase): %r", cleaned_text[:60])
+            logger.info("Skip (own lang / skip-phrase): %r", cleaned_text[:_LOG_PREVIEW])
             self._on_message(TranslatedMessage(original=msg, translation=None))
             return
 
         # UNKNOWN = lingua couldn't determine, let DeepL auto-detect
         if detected == ChatLanguageDetector.UNKNOWN:
             source_lang = ""
-            logger.info("Translating (auto-detect)→%s: %r", target_lang, cleaned_text[:60])
+            logger.info("Translating (auto-detect)→%s: %r", target_lang, cleaned_text[:_LOG_PREVIEW])
         else:
             source_lang = _LINGUA_TO_DEEPL.get(detected, "")
             if not source_lang:
@@ -320,12 +316,12 @@ class TranslationPipeline:
                 # auto-detect instead of skipping.
                 logger.info(
                     "Translating (auto-detect, lingua=%s)→%s: %r",
-                    detected, target_lang, cleaned_text[:60],
+                    detected, target_lang, cleaned_text[:_LOG_PREVIEW],
                 )
             else:
                 logger.info(
                     "Translating %s→%s: %r",
-                    source_lang, target_lang, cleaned_text[:60],
+                    source_lang, target_lang, cleaned_text[:_LOG_PREVIEW],
                 )
 
         # Check phrasebook (instant, no API call)
@@ -360,18 +356,17 @@ class TranslationPipeline:
         # Expand gaming slang to plain English so DeepL can understand
         expanded = expand_slang(text_to_translate)
         if expanded != text_to_translate:
-            logger.info("Slang expanded: %r → %r", text_to_translate[:60], expanded[:60])
+            logger.info("Slang expanded: %r → %r", text_to_translate[:_LOG_PREVIEW], expanded[:_LOG_PREVIEW])
             text_to_translate = expanded
 
         # Expand WoW-specific terms (context-gated: 2+ gaming terms required)
         wow_expanded = expand_wow_terms(text_to_translate)
         if wow_expanded != text_to_translate:
-            logger.info("WoW terms expanded: %r → %r", text_to_translate[:60], wow_expanded[:60])
+            logger.info("WoW terms expanded: %r → %r", text_to_translate[:_LOG_PREVIEW], wow_expanded[:_LOG_PREVIEW])
             text_to_translate = wow_expanded
 
         # --- STREAMING: emit original immediately, then update with translation ---
-        msg_id = self._next_msg_id
-        self._next_msg_id += 1
+        msg_id = next(self._msg_id_counter)
         self._on_message(TranslatedMessage(
             original=msg, translation=None,
             source_lang=source_lang, msg_id=msg_id,
@@ -379,19 +374,19 @@ class TranslationPipeline:
 
         # Translate via API (this blocks — called from watchdog thread)
         src_display = source_lang or "auto"
-        logger.info("Calling DeepL: %s→%s %r", src_display, target_lang, text_to_translate[:60])
+        logger.info("Calling DeepL: %s→%s %r", src_display, target_lang, text_to_translate[:_LOG_PREVIEW])
         result = self._translator.translate(
             text_to_translate, target_lang=target_lang,
             source_lang=source_lang or None,
-            context="World of Warcraft multiplayer game raid group chat",
+            context=_DEEPL_CONTEXT,
         )
-        translated_preview = result.translated[:60] if result.translated else ""
+        translated_preview = result.translated[:_LOG_PREVIEW] if result.translated else ""
         logger.info("DeepL result: success=%s, translated=%r", result.success, translated_preview)
 
         # If DeepL auto-detected own language, skip (e.g. "zerg" detected as RU)
         own_deepl = _LINGUA_TO_DEEPL.get(cfg.own_language, "")
         if result.success and not source_lang and result.source_lang == own_deepl:
-            logger.info("DeepL detected own lang (%s), skipping: %r", own_deepl, cleaned_text[:60])
+            logger.info("DeepL detected own lang (%s), skipping: %r", own_deepl, cleaned_text[:_LOG_PREVIEW])
             return  # original already emitted above
 
         # Restore preserved tokens in translated text

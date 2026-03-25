@@ -1,5 +1,34 @@
 # Changelog / История изменений / Registro de cambios
 
+## [3.1.1] — 2026-03-25
+
+### Changed / Изменено / Cambiado
+- **Code cleanup:** removed 235 lines of dead pointer-chasing code from memory reader
+- Extracted `DeduplicationBuffer` into standalone class with safety cap (10k entries)
+- Replaced 40+ magic numbers with named constants across pipeline, overlay, memory reader
+- Unified 5 duplicate scan-accept blocks into `_accept_marker()` helper
+- Named regex groups in parser (`m.group('text')` instead of `m.group(4)`)
+- Fixed race condition: `itertools.count()` for thread-safe message IDs
+- Narrowed exception handlers (`RuntimeError | OSError` instead of bare `Exception`)
+- Removed dead `dict_text` parameter, duplicate regex, unused variables
+- Made `RE_WOW_LINK` public (was private `_RE_WOW_LINK` imported cross-module with `noqa`)
+
+— **Чистка кода:** удалено 235 строк мёртвого pointer-chasing кода из memory reader
+— Дедупликация вынесена в отдельный класс с лимитом 10k записей
+— 40+ магических чисел заменены именованными константами
+— 5 дублей scan-accept объединены в `_accept_marker()`
+— Именованные группы в regex парсера
+— Потокобезопасные ID через `itertools.count()`
+— Сужены обработчики исключений, удалены мёртвые параметры и дубли
+
+— **Limpieza de código:** eliminadas 235 líneas de código muerto de pointer-chasing
+— Deduplicación extraída en clase independiente con límite de 10k entradas
+— 40+ números mágicos reemplazados con constantes nombradas
+— 5 bloques duplicados scan-accept unificados en `_accept_marker()`
+— Grupos regex nombrados en el parser
+— IDs thread-safe via `itertools.count()`
+— Manejadores de excepciones restringidos, parámetros y duplicados eliminados
+
 ## [3.0.1] — 2026-03-20
 
 ### Fixed / Исправлено / Corregido

@@ -1,20 +1,12 @@
 """Read WoW chat messages from addon's in-memory buffer string.
 
-Architecture (Pointer-Chasing with Tiered Scan Fallback):
+Architecture (Tiered Scan):
     The addon stores chat messages in BabelChatDB.wctbuf as a Lua
     string with __WCT_BUF__/__WCT_END__ markers. Lua strings are immutable —
     every RebuildBuffer() creates a NEW string at a NEW address. The old string
     lingers until GC collects it.
 
-    Primary strategy (pointer-chasing, ~1ms per poll):
-    The Lua table BabelChatDB has a hash node whose value TValue
-    points to the current wctbuf TString. The TABLE doesn't move — only the
-    string pointer changes on each flush. After finding the buffer once via
-    scan, we locate the hash node address and cache it. On every subsequent
-    poll we read 8 bytes (the pointer) and follow it to the current string.
-    This avoids scanning 3GB of memory on every flush cycle.
-
-    Fallback strategy (tiered scan cascade, used when pointer is stale):
+    Scan cascade (fast to slow):
     0. Cached region scan: re-scan the SAME region (~50ms)
     1. History scan: check regions where markers were previously found (~30ms)
     1.5 Neighborhood scan: ±16MB around last known address (~200ms)
@@ -23,6 +15,11 @@ Architecture (Pointer-Chasing with Tiered Scan Fallback):
 
     Smart rescan: only triggered when buffer read fails or no new messages for
     >2s. When messages are flowing, no rescan overhead at all.
+
+    Pointer-chasing (disabled, needs research):
+    Reading the Lua table hash node pointer would allow ~1ms polls instead of
+    scanning, but WoW's modified Lua 5.1 internals are not well understood.
+    Stub remains in _try_setup_pointer for future implementation.
 
 Safety: Read-only memory access. Warden does not flag external ReadProcessMemory.
 """
@@ -81,6 +78,18 @@ _MARKER_PATTERN = re.compile(rb"__WCT_BUF_[\d]{4}__|__WCT_BUF__")
 
 # Neighborhood scan radius (bytes) for fast relocation after GC
 _NEIGHBORHOOD_RADIUS = 16 * 1024 * 1024  # 16MB (was 4MB — wider net, still fast)
+
+# Max region size to include in memory enumeration (100MB)
+_MAX_REGION_SIZE = 100 * 1024 * 1024
+
+# Max user-mode virtual address (x86-64)
+_MAX_ADDRESS = 0x7FFFFFFFFFFF
+
+# Max number of delivered payloads to track for seq reset dedup
+_MAX_DELIVERED_PAYLOADS = 200
+
+# Consecutive polls with same seq before declaring buffer frozen
+_FROZEN_THRESHOLD = 3
 
 
 def _find_content_start(raw: bytes) -> int:
@@ -492,7 +501,7 @@ class WoWAddonBufReader:
         kernel32 = ctypes.windll.kernel32
         mbi = _MEMORY_BASIC_INFORMATION()
         address = 0
-        max_address = 0x7FFFFFFFFFFF
+        max_address = _MAX_ADDRESS
 
         while address < max_address:
             result = kernel32.VirtualQueryEx(
@@ -507,7 +516,7 @@ class WoWAddonBufReader:
             if (
                 mbi.State == _MEM_COMMIT
                 and mbi.Protect in _READABLE_PROTECT
-                and 0 < mbi.RegionSize <= 100 * 1024 * 1024
+                and 0 < mbi.RegionSize <= _MAX_REGION_SIZE
             ):
                 regions.append((address, mbi.RegionSize))
 
@@ -561,252 +570,16 @@ class WoWAddonBufReader:
             self._cached_region_index = idx
             self._record_region_hit(base, size)
 
-    def _try_setup_pointer(self, buf_addr: int) -> None:
-        """Try to set up pointer-chasing for fast buffer reads.
-
-        Called after a successful marker find.  Runs pointer search in the
-        background to avoid blocking the poll loop.  If it fails, we just
-        keep using the normal scan-based approach.
-        """
-        # Pointer chasing disabled — needs more research on WoW's Lua internals.
-        # TODO: implement in separate branch with proper two-pass verification.
-        pass
-
-    # ------------------------------------------------------------------
-    # Pointer-chasing: find & use the hash node pointer to the buffer
-    # ------------------------------------------------------------------
-
-    def _find_ptr_to_buffer(self, buf_addr: int) -> bool:
-        """Find the Lua table hash node via two-pass verification.
-
-        Pass 1: find buffer at addr A, collect all pointer candidates to A.
-        Pass 2: wait for addon flush (new buffer at addr B), check which
-                 candidate now points to B.  That's the real hash node.
-
-        This eliminates false positives (stack refs, backup copies) because
-        only the table hash node updates when the addon assigns a new string.
-
-        Args:
-            buf_addr: address of the marker text (__WCT_BUF_...) in memory.
-
-        Returns:
-            True if a valid pointer was found and cached.
-        """
-        if not self._pm:
+    def _accept_marker(self, addr: int) -> bool:
+        """Accept a found marker address: update state, record region, skip existing."""
+        if not addr or self._is_blacklisted(addr):
             return False
-
-        handle = self._pm.process_handle
-        t0 = time.monotonic()
-
-        # Step 1: collect all pointers to buf_addr (with TString header offsets)
-        # WoW's modified Lua 5.1 TString header size is unknown — try wide range
-        candidate_offsets = list(range(0, 96, 8))
-        candidates: list[tuple[int, bytes]] = []
-        for off in candidate_offsets:
-            tstring_addr = buf_addr - off
-            if tstring_addr > 0:
-                candidates.append((off, tstring_addr.to_bytes(8, "little")))
-
-        # Scan all heap regions ≤8MB
-        rw_regions = [
-            (b, s) for b, s in self._all_regions if s <= 8 * 1024 * 1024
-        ]
-
-        logger.info(
-            "Pointer search pass 1: scanning %d regions (buf=0x%X)",
-            len(rw_regions), buf_addr,
-        )
-
-        # Parallel scan using C-speed bytes.find() for each pattern
-        def _search_batch(regions: list[tuple[int, int]]) -> list[tuple[int, int]]:
-            results: list[tuple[int, int]] = []
-            for base, size in regions:
-                raw = _read_process_memory(handle, base, size)
-                if raw is None:
-                    continue
-                for off, pattern in candidates:
-                    pos = 0
-                    while True:
-                        idx = raw.find(pattern, pos)
-                        if idx == -1:
-                            break
-                        if idx % 8 == 0:  # pointers are 8-byte aligned
-                            results.append((base + idx, off))
-                        pos = idx + 1
-            return results
-
-        pass1_matches: list[tuple[int, int]] = []
-        if len(rw_regions) > 100:
-            n_workers = min(8, max(2, len(rw_regions) // 500))
-            chunk_size = (len(rw_regions) + n_workers - 1) // n_workers
-            chunks = [rw_regions[i:i + chunk_size] for i in range(0, len(rw_regions), chunk_size)]
-            with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                futures = [pool.submit(_search_batch, chunk) for chunk in chunks]
-                for fut in as_completed(futures):
-                    with contextlib.suppress(Exception):
-                        pass1_matches.extend(fut.result())
-        else:
-            pass1_matches = _search_batch(rw_regions)
-
-        elapsed1 = time.monotonic() - t0
-        logger.info(
-            "Pointer search pass 1: %d candidates in %.0fms",
-            len(pass1_matches), elapsed1 * 1000,
-        )
-
-        if not pass1_matches:
-            return False
-
-        # Step 2: wait for the addon to flush a NEW buffer (new string addr)
-        # Poll for up to 10 seconds watching for the buffer to move
-        logger.info("Pointer search pass 2: waiting for buffer flush...")
-        new_buf_addr = 0
-        wait_start = time.monotonic()
-        while time.monotonic() - wait_start < 10.0:
-            time.sleep(0.5)
-            # Try to find a newer buffer via scan
-            self._all_regions = self._get_memory_regions()
-            new_addr = self._scan_heap_regions(min_seq=0)
-            if new_addr and new_addr != buf_addr:
-                # Verify it's a valid buffer
-                raw = _read_process_memory(handle, new_addr, MAX_BUF_READ)
-                if raw and raw.find(MARKER_START) != -1 and raw.find(MARKER_END) != -1:
-                    new_buf_addr = new_addr
-                    break
-
-        if not new_buf_addr:
-            logger.info("Pointer search pass 2: buffer didn't move in 10s, giving up")
-            return False
-
-        elapsed2 = time.monotonic() - t0
-        logger.info(
-            "Pointer search pass 2: buffer moved 0x%X → 0x%X (%.0fms)",
-            buf_addr, new_buf_addr, elapsed2 * 1000,
-        )
-
-        # Step 3: check which pass1 candidates now point to the NEW buffer
-        for ptr_addr, off in pass1_matches:
-            try:
-                ptr_bytes = _read_process_memory(handle, ptr_addr, 8)
-                if ptr_bytes is None or len(ptr_bytes) < 8:
-                    continue
-                target = int.from_bytes(ptr_bytes, "little")
-                if target == 0:
-                    continue
-
-                # The target should point to TString of the NEW buffer
-                expected_tstring = new_buf_addr - off
-                if target != expected_tstring:
-                    continue
-
-                # Final verify: follow pointer and check marker
-                target_raw = _read_process_memory(handle, target, MAX_BUF_READ)
-                if target_raw is None:
-                    continue
-                marker_pos = target_raw.find(MARKER_START, 0, 64)
-                if marker_pos == -1:
-                    continue
-                end_pos = target_raw.find(MARKER_END, marker_pos)
-                if end_pos == -1:
-                    continue
-
-                # This is the REAL hash node pointer!
-                self._ptr_addr = ptr_addr
-                self._ptr_offset = marker_pos
-                self._buf_addr = new_buf_addr
-
-                elapsed_total = time.monotonic() - t0
-                logger.info(
-                    "Pointer VERIFIED & CACHED at 0x%X "
-                    "(offset=%d, marker_pos=%d, %.0fms total, "
-                    "%d candidates checked)",
-                    ptr_addr, off, marker_pos,
-                    elapsed_total * 1000, len(pass1_matches),
-                )
-                return True
-            except Exception:
-                continue
-
-        elapsed_total = time.monotonic() - t0
-        logger.info(
-            "Pointer search: no candidate updated to new buffer (%.0fms)",
-            elapsed_total * 1000,
-        )
-        return False
-
-    def _read_buffer_via_ptr(self) -> str | None:
-        """Fast-path buffer read: follow the cached pointer to the current string.
-
-        Reads 8 bytes at self._ptr_addr to get the TString pointer, then reads
-        MAX_BUF_READ bytes from the TString and extracts the buffer content.
-
-        Returns buffer content string, or None if the pointer is stale.
-        """
-        if not self._pm or self._ptr_addr == 0:
-            return None
-
-        handle = self._pm.process_handle
-
-        # Step 1: Read the pointer (8 bytes)
-        ptr_bytes = _read_process_memory(handle, self._ptr_addr, 8)
-        if ptr_bytes is None or len(ptr_bytes) < 8:
-            logger.debug("Pointer read failed at 0x%X", self._ptr_addr)
-            return None
-
-        target = int.from_bytes(ptr_bytes, "little")
-        if target == 0:
-            logger.debug("Pointer at 0x%X is null", self._ptr_addr)
-            return None
-
-        # Step 2: Read the TString content
-        raw = _read_process_memory(handle, target, MAX_BUF_READ)
-        if raw is None:
-            logger.debug(
-                "Pointer read: 0x%X -> target 0x%X unreadable",
-                self._ptr_addr, target,
-            )
-            return None
-
-        # Step 3: Find the marker within the TString
-        # Use cached offset as a hint, but also search if not found there
-        marker_pos = -1
-        if self._ptr_offset < len(raw) and raw[self._ptr_offset:].startswith(MARKER_START):
-            marker_pos = self._ptr_offset
-        else:
-            marker_pos = raw.find(MARKER_START, 0, 64)
-
-        if marker_pos == -1:
-            logger.debug(
-                "Pointer read: 0x%X -> 0x%X no marker (first 64b: %r)",
-                self._ptr_addr, target, raw[:64],
-            )
-            return None
-
-        chunk = raw[marker_pos:]
-        co = _find_content_start(chunk)
-        if co == -1:
-            return None
-
-        end_idx = chunk.find(MARKER_END, co)
-        if end_idx == -1:
-            return None
-
-        content_bytes = chunk[co:end_idx]
-
-        # Update _buf_addr to the marker address in case fallback code needs it
-        new_buf_addr = target + marker_pos
-        if new_buf_addr != self._buf_addr:
-            logger.info(
-                "Pointer read: buffer moved 0x%X -> 0x%X (via ptr 0x%X)",
-                self._buf_addr, new_buf_addr, self._ptr_addr,
-            )
-            self._buf_addr = new_buf_addr
-            self._record_hit_from_addr(new_buf_addr)
-
-        try:
-            return content_bytes.decode("utf-8", errors="replace")
-        except Exception:
-            return None
+        self._buf_addr = addr
+        self._stale_count = 0
+        self._stale_tier = 0
+        self._record_hit_from_addr(addr)
+        self._maybe_skip_existing(addr)
+        return True
 
     # ------------------------------------------------------------------
     # Marker scanning (tiered cascade)
@@ -884,14 +657,8 @@ class WoWAddonBufReader:
 
         # Tier 0: Cached region scan (fastest, ~50ms)
         if self._cached_region:
-            t0 = time.monotonic()
             addr = self._scan_cached_region(min_seq=min_seq)
-            if addr and addr not in self._blacklisted_addrs:
-                self._buf_addr = addr
-                self._stale_count = 0
-                self._record_hit_from_addr(addr)
-                self._maybe_skip_existing(addr)
-                self._try_setup_pointer(addr)
+            if self._accept_marker(addr):
                 return True
 
         # Tier 1: History scan (very fast, ~30ms)
@@ -901,16 +668,11 @@ class WoWAddonBufReader:
                 self._pm, self._region_history, min_seq=min_seq,
             )
             elapsed = time.monotonic() - t0
-            if addr and addr not in self._blacklisted_addrs:
+            if self._accept_marker(addr):
                 logger.info(
                     "History scan HIT: marker at 0x%X (%.0fms)",
                     addr, elapsed * 1000,
                 )
-                self._buf_addr = addr
-                self._stale_count = 0
-                self._record_hit_from_addr(addr)
-                self._maybe_skip_existing(addr)
-                self._try_setup_pointer(addr)
                 return True
             logger.info("History scan MISS (%.0fms)", elapsed * 1000)
 
@@ -919,16 +681,11 @@ class WoWAddonBufReader:
             t0 = time.monotonic()
             addr = self._neighborhood_scan(self._buf_addr, min_seq=min_seq)
             elapsed = time.monotonic() - t0
-            if addr and addr not in self._blacklisted_addrs:
+            if self._accept_marker(addr):
                 logger.info(
                     "Neighborhood scan HIT in _find_marker: 0x%X (%.0fms)",
                     addr, elapsed * 1000,
                 )
-                self._buf_addr = addr
-                self._stale_count = 0
-                self._record_hit_from_addr(addr)
-                self._maybe_skip_existing(addr)
-                self._try_setup_pointer(addr)
                 return True
             logger.info("Neighborhood scan MISS in _find_marker (%.0fms)", elapsed * 1000)
 
@@ -937,16 +694,11 @@ class WoWAddonBufReader:
         t0 = time.monotonic()
         addr = self._scan_heap_regions(min_seq=min_seq)
         elapsed = time.monotonic() - t0
-        if addr and addr not in self._blacklisted_addrs:
+        if self._accept_marker(addr):
             logger.info(
                 "Heap scan HIT: marker at 0x%X (%.1fs)",
                 addr, elapsed,
             )
-            self._buf_addr = addr
-            self._stale_count = 0
-            self._record_hit_from_addr(addr)
-            self._maybe_skip_existing(addr)
-            self._try_setup_pointer(addr)
             return True
         logger.info("Heap scan MISS (%.1fs)", elapsed)
 
@@ -954,15 +706,10 @@ class WoWAddonBufReader:
         t0 = time.monotonic()
         addr = self._full_marker_scan(min_seq=min_seq)
         elapsed = time.monotonic() - t0
-        if addr and addr not in self._blacklisted_addrs:
+        if self._accept_marker(addr):
             logger.info(
                 "Full scan: marker at 0x%X (%.1fs)", addr, elapsed,
             )
-            self._buf_addr = addr
-            self._stale_count = 0
-            self._record_hit_from_addr(addr)
-            self._maybe_skip_existing(addr)
-            self._try_setup_pointer(addr)
             return True
 
         logger.warning("All scans failed: marker not found (%.1fs total)", elapsed)
@@ -1084,14 +831,10 @@ class WoWAddonBufReader:
                 "Quick rescan HIT: 0x%X → 0x%X (%.0fms)",
                 self._buf_addr, new_addr, elapsed * 1000,
             )
-            self._buf_addr = new_addr
-            self._stale_count = 0
-            self._stale_tier = 0
+            self._accept_marker(new_addr)
             self._same_addr_count = 0
             self._frozen_count = 0
             self._rescan_interval = _RESCAN_INTERVALS[0]
-            self._record_hit_from_addr(new_addr)
-            self._try_setup_pointer(new_addr)
         else:
             self._same_addr_count += 1
             # After 2 quick misses, do a full rescan
@@ -1116,12 +859,15 @@ class WoWAddonBufReader:
 
         t0 = time.monotonic()
 
+        def _is_rejected(addr: int) -> bool:
+            return not addr or self._is_blacklisted(addr) or addr == self._buf_addr
+
         # Try cached region first — single ReadProcessMemory call
         new_addr = 0
         scan_type = "cached_region"
         if self._cached_region:
             new_addr = self._scan_cached_region()
-            if new_addr in self._blacklisted_addrs or new_addr == self._buf_addr:
+            if _is_rejected(new_addr):
                 new_addr = 0
 
         # Try history regions — but only accept if it's a DIFFERENT address
@@ -1129,13 +875,13 @@ class WoWAddonBufReader:
             scan_type = "history"
             if self._region_history:
                 new_addr = _scan_regions_for_marker(self._pm, self._region_history)
-                if new_addr in self._blacklisted_addrs or new_addr == self._buf_addr:
+                if _is_rejected(new_addr):
                     new_addr = 0
 
         if not new_addr and self._buf_addr:
             # Neighborhood scan: Lua GC often reallocates nearby (~200ms vs 2.5s)
             new_addr = self._neighborhood_scan(self._buf_addr)
-            if new_addr in self._blacklisted_addrs or new_addr == self._buf_addr:
+            if _is_rejected(new_addr):
                 new_addr = 0
             scan_type = "neighborhood"
 
@@ -1143,14 +889,14 @@ class WoWAddonBufReader:
             # Full heap scan — find buffer with highest seq
             self._all_regions = self._get_memory_regions()
             new_addr = self._scan_heap_regions()
-            if new_addr in self._blacklisted_addrs or new_addr == self._buf_addr:
+            if _is_rejected(new_addr):
                 new_addr = 0
             scan_type = "heap"
 
         # If heap scan didn't find a newer buffer after many attempts, try full pymem scan
         if not new_addr and self._same_addr_count >= 5:
             new_addr = self._full_marker_scan(min_seq=self._last_seq)
-            if new_addr in self._blacklisted_addrs or new_addr == self._buf_addr:
+            if _is_rejected(new_addr):
                 new_addr = 0
             scan_type = "full"
 
@@ -1161,14 +907,10 @@ class WoWAddonBufReader:
                 "Found newer buffer at 0x%X (was 0x%X), %s scan took %.0fms",
                 new_addr, self._buf_addr, scan_type, elapsed * 1000,
             )
-            self._buf_addr = new_addr
-            self._stale_count = 0
-            self._stale_tier = 0
+            self._accept_marker(new_addr)
             self._same_addr_count = 0
             self._frozen_count = 0
             self._rescan_interval = _RESCAN_INTERVALS[0]
-            self._record_hit_from_addr(new_addr)
-            self._try_setup_pointer(new_addr)
         else:
             self._same_addr_count += 1
             # Adaptive: ramp up rescan interval when idle
@@ -1292,10 +1034,7 @@ class WoWAddonBufReader:
     def _poll_buffer(self) -> None:
         """Read the addon buffer and deliver new messages.
 
-        Fast path: if we have a cached pointer (_ptr_addr), follow it to read
-        the current buffer in ~1ms without any memory scanning.
-
-        Fallback scenarios:
+        Scenarios:
         1. Marker gone (read returns None) — string was GC'd → IMMEDIATE fast
            relocate (cached region + neighborhood + history, <300ms), then
            fall back to heap/full scan only if fast path fails.
@@ -1306,21 +1045,7 @@ class WoWAddonBufReader:
         if not self._pm or self._buf_addr == 0:
             return
 
-        # ---- FAST PATH: pointer-chasing (~1ms) ----
-        content = None
-        if self._ptr_addr:
-            content = self._read_buffer_via_ptr()
-            if content is None:
-                logger.info(
-                    "Pointer stale at 0x%X, falling back to direct read",
-                    self._ptr_addr,
-                )
-                self._ptr_addr = 0
-                self._ptr_offset = 0
-
-        # ---- NORMAL PATH: direct read at cached address ----
-        if content is None:
-            content = self._read_buffer()
+        content = self._read_buffer()
         if content is None:
             # ---- FAST PATH: marker gone, try to relocate immediately ----
             self._stale_count += 1
@@ -1334,11 +1059,7 @@ class WoWAddonBufReader:
                         "Fast relocate SUCCESS: 0x%X → 0x%X",
                         old_addr, new_addr,
                     )
-                    self._buf_addr = new_addr
-                    self._stale_count = 0
-                    self._stale_tier = 0
-                    self._record_hit_from_addr(new_addr)
-                    self._try_setup_pointer(new_addr)
+                    self._accept_marker(new_addr)
                     # Immediately try to read from new address
                     content = self._read_buffer()
                     if content is not None:
@@ -1408,9 +1129,9 @@ class WoWAddonBufReader:
 
             # If seq unchanged for 3+ polls AND no new messages recently,
             # this buffer is likely a zombie — trigger rescan
-            if self._frozen_count >= 3:
+            if self._frozen_count >= _FROZEN_THRESHOLD:
                 now_f = time.monotonic()
-                time_idle = now_f - self._last_new_msg_time if self._last_new_msg_time else 999.0
+                time_idle = now_f - self._last_new_msg_time if self._last_new_msg_time else float('inf')
                 if time_idle > 3.0:
                     logger.info(
                         "Frozen buffer detected: seq=%d unchanged for %d polls, "
@@ -1428,7 +1149,7 @@ class WoWAddonBufReader:
         # Strategy: only do a FAST rescan (cached region + neighborhood) on the
         # normal timer.  Full heap scan only when fast rescan keeps failing.
         now = time.monotonic()
-        time_since_new_msg = now - self._last_new_msg_time if self._last_new_msg_time else 999.0
+        time_since_new_msg = now - self._last_new_msg_time if self._last_new_msg_time else float('inf')
         if (
             time_since_new_msg > 1.5
             and now - self._last_rescan >= self._rescan_interval
@@ -1501,7 +1222,7 @@ class WoWAddonBufReader:
             new_count += 1
             # Track delivered payload for seq reset dedup
             self._delivered_payloads.add(payload[:200])
-            if len(self._delivered_payloads) > 200:
+            if len(self._delivered_payloads) > _MAX_DELIVERED_PAYLOADS:
                 self._delivered_payloads.clear()
 
             # Sanitize: Lua strings may contain embedded \x00 bytes from

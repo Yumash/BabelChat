@@ -209,7 +209,7 @@ def main() -> int:
     load_dotenv()
 
     # Single instance guard — kill old instance if running
-    _mutex = _ensure_single_instance()
+    _ensure_single_instance()
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

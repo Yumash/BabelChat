@@ -2,7 +2,6 @@
 
 from app.text_utils import (
     clean_message_text,
-    is_empty_or_whitespace,
     restore_tokens,
     strip_for_translation,
 )
@@ -70,17 +69,3 @@ class TestCleanMessageText:
         assert clean_message_text("  hello  ") == "hello"
 
 
-class TestIsEmptyOrWhitespace:
-    """Test empty message detection."""
-
-    def test_empty(self):
-        assert is_empty_or_whitespace("") is True
-
-    def test_whitespace(self):
-        assert is_empty_or_whitespace("   ") is True
-
-    def test_not_empty(self):
-        assert is_empty_or_whitespace("hello") is False
-
-    def test_tabs(self):
-        assert is_empty_or_whitespace("\t\n") is True

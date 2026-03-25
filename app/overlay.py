@@ -29,6 +29,17 @@ from app.translator import TranslatorService
 
 logger = logging.getLogger(__name__)
 
+# --- Overlay layout constants ---
+_MAX_MESSAGES = 500          # Max messages kept in memory (prevents unbounded growth)
+_MAX_DOC_BLOCKS = 1500       # QTextEdit maximum block count (limits DOM size)
+_MIN_WIDTH = 350             # Minimum overlay width in pixels
+_MIN_HEIGHT = 200            # Minimum overlay height in pixels
+_MINIMIZE_WIDTH = 180        # Width when overlay is minimized to title bar
+_MINIMIZE_HEIGHT = 32        # Height when overlay is minimized to title bar
+_EDGE_MARGIN = 8             # Pixel margin from border to trigger edge resize
+_WOW_STATUS_INTERVAL = 2000  # WoW connection status poll interval (ms)
+_COPIED_FLASH_MS = 2000      # Duration of "Copied!" flash label (ms)
+
 
 class _ResizeGrip(QLabel):
     """Draggable resize grip for bottom-right corner of overlay."""
@@ -238,7 +249,7 @@ class ChatOverlay(QWidget):
         self._target_lang = "EN"
         self._thread_pool = QThreadPool()
         self._messages: list[TranslatedMessage] = []
-        self._max_messages = 500  # cap to prevent unbounded growth
+        self._max_messages = _MAX_MESSAGES
         self._minimized = False
         self._restored_size: tuple[int, int] | None = None
 
@@ -259,14 +270,16 @@ class ChatOverlay(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(350, 200)
+        self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
         self.resize(450, 300)
 
     def _setup_ui(self) -> None:
         """Build the overlay UI."""
         layout = QVBoxLayout(self)
         # Outer margins create transparent grip area matching _EDGE_MARGIN
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(
+            _EDGE_MARGIN, _EDGE_MARGIN, _EDGE_MARGIN, _EDGE_MARGIN,
+        )
         layout.setSpacing(0)
         self.setMouseTracking(True)
 
@@ -379,7 +392,7 @@ class ChatOverlay(QWidget):
         # Chat message area
         self._chat_area = QTextEdit()
         self._chat_area.setReadOnly(True)
-        self._chat_area.document().setMaximumBlockCount(1500)
+        self._chat_area.document().setMaximumBlockCount(_MAX_DOC_BLOCKS)
         self._chat_area.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -679,7 +692,7 @@ class ChatOverlay(QWidget):
             self._minimize_btn.setText("+")
             # Shrink to title bar only
             self.setMinimumSize(0, 0)
-            self.resize(180, 32)
+            self.resize(_MINIMIZE_WIDTH, _MINIMIZE_HEIGHT)
         else:
             # Restore
             self._toolbar.show()
@@ -689,7 +702,7 @@ class ChatOverlay(QWidget):
             self._resize_grip.show()
             self._toggle_btn.show()
             self._minimize_btn.setText("─")
-            self.setMinimumSize(350, 200)
+            self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
             if self._restored_size:
                 self.resize(*self._restored_size)
 
@@ -712,7 +725,7 @@ class ChatOverlay(QWidget):
         self._wow_checker = checker
         self._wow_timer = QTimer(self)
         self._wow_timer.timeout.connect(self._update_wow_status)
-        self._wow_timer.start(2000)
+        self._wow_timer.start(_WOW_STATUS_INTERVAL)
         # Initial update
         self._update_wow_status()
 
@@ -770,7 +783,7 @@ class ChatOverlay(QWidget):
             if clipboard:
                 clipboard.setText(translated)
             self._reply_status.setText(tr("overlay.reply.copied"))
-            QTimer.singleShot(2000, lambda: self._reply_status.setText(""))
+            QTimer.singleShot(_COPIED_FLASH_MS, lambda: self._reply_status.setText(""))
         else:
             self._reply_output.setText(tr("overlay.reply.error"))
 
@@ -781,11 +794,9 @@ class ChatOverlay(QWidget):
             if clipboard:
                 clipboard.setText(text)
             self._reply_status.setText(tr("overlay.reply.copied"))
-            QTimer.singleShot(2000, lambda: self._reply_status.setText(""))
+            QTimer.singleShot(_COPIED_FLASH_MS, lambda: self._reply_status.setText(""))
 
     # -- Drag & resize support --
-
-    _EDGE_MARGIN = 8  # px from border to trigger resize
 
     _EDGE_CURSORS: dict[str, Qt.CursorShape] = {
         "br": Qt.CursorShape.SizeFDiagCursor,
@@ -801,7 +812,7 @@ class ChatOverlay(QWidget):
     def _hit_edge(self, pos: QPoint) -> str | None:
         """Return resize edge name if mouse is near a border, else None."""
         r = self.rect()
-        m = self._EDGE_MARGIN
+        m = _EDGE_MARGIN
         on_left = pos.x() < m
         on_right = pos.x() > r.width() - m
         on_top = pos.y() < m

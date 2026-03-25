@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from app.parser import RE_WOW_LINK
+
 # WoW raid target markers: {rt1} through {rt8}, {star}, {circle}, {diamond}, {triangle},
 # {moon}, {square}, {cross}, {skull}
 _RE_WOW_MARKERS = re.compile(
@@ -15,11 +17,6 @@ _RE_WOW_MARKERS = re.compile(
 _RE_URL = re.compile(
     r"https?://[^\s<>\"]+|www\.[^\s<>\"]+",
     re.IGNORECASE,
-)
-
-# WoW item/spell links: |cFFFFFFFF|Hitem:12345|h[Item Name]|h|r
-_RE_WOW_LINK = re.compile(
-    r"\|c[0-9a-fA-F]{8}\|H[^|]+\|h\[[^\]]*\]\|h\|r"
 )
 
 
@@ -41,7 +38,7 @@ def strip_for_translation(text: str) -> tuple[str, list[tuple[str, str]]]:
 
     result = text
     # Order matters: WoW links first (they contain special chars), then URLs, then markers
-    result = _RE_WOW_LINK.sub(replace_token, result)
+    result = RE_WOW_LINK.sub(replace_token, result)
     result = _RE_URL.sub(replace_token, result)
     result = _RE_WOW_MARKERS.sub(replace_token, result)
 
@@ -54,11 +51,6 @@ def restore_tokens(text: str, replacements: list[tuple[str, str]]) -> str:
     for placeholder, original in replacements:
         result = result.replace(placeholder, original)
     return result
-
-
-def is_empty_or_whitespace(text: str) -> bool:
-    """Check if text is empty or whitespace-only."""
-    return not text or not text.strip()
 
 
 def clean_message_text(text: str) -> str:

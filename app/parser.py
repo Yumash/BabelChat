@@ -90,28 +90,31 @@ class ChatMessage:
 # 2/15 21:30:45.123  To [Артас-Азурегос]: whisper text
 # 2/15 21:30:45.123  [Артас-Азурегос] whispers: incoming text
 
+# Common timestamp pattern shared across all regexes
+_TS = r"(?P<timestamp>\d+/\d+\s+\d+:\d+:\d+\.\d+)"
+
 # Standard channel message: timestamp  [Channel] Author-Server: text
 # Also supports [Channel] [Author-Server]: text (RU client AddMessage format)
 _RE_CHANNEL_MSG = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"\[([^\]]+)\]\s+"  # [Channel]
-    r"\[?([^-\s:\]]+)"  # Author (optional [ bracket)
-    r"(?:-([^\s:\]]+))?\]?"  # -Server (optional, optional ] bracket)
+    r"^" + _TS + r"\s+"  # timestamp
+    r"\[(?P<channel>[^\]]+)\]\s+"  # [Channel]
+    r"\[?(?P<author>[^-\s:\]]+)"  # Author (optional [ bracket)
+    r"(?:-(?P<server>[^\s:\]]+))?\]?"  # -Server (optional, optional ] bracket)
     r":\s+"  # : separator
-    r"(.+)$"  # message text
+    r"(?P<text>.+)$"  # message text
 )
 
 # Non-EN client format: timestamp  |Hchannel:TYPE|h[LocalizedName]|h Author-Server: text
 # Author may be wrapped in |Hplayer:...|h[Author-Server]|h from AddMessage hook
 _RE_HCHANNEL_MSG = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"\|Hchannel:(\w+)\|h\[[^\]]*\]\|h\s+"  # |Hchannel:TYPE|h[Name]|h
+    r"^" + _TS + r"\s+"  # timestamp
+    r"\|Hchannel:(?P<channel>\w+)\|h\[[^\]]*\]\|h\s+"  # |Hchannel:TYPE|h[Name]|h
     r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h wrapper
-    r"\[?([^-\s:\]|]+)"  # Author (allow optional [ bracket, stop at |)
-    r"(?:-([^\s:\]|]+))?"  # -Server (optional)
+    r"\[?(?P<author>[^-\s:\]|]+)"  # Author (allow optional [ bracket, stop at |)
+    r"(?:-(?P<server>[^\s:\]|]+))?"  # -Server (optional)
     r"\]?(?:\|h)?"  # optional ] and |h close
     r":\s+"  # : separator
-    r"(.+)$"  # message text
+    r"(?P<text>.+)$"  # message text
 )
 
 # Bracket channel + player hyperlink format (RU scrollback):
@@ -119,44 +122,44 @@ _RE_HCHANNEL_MSG = re.compile(
 # This format appears in ChatFrame scrollback for channels like Raid Warning
 # where the channel name is localized in brackets, not as |Hchannel:...|h.
 _RE_BRACKET_HPLAYER_MSG = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"\[([^\]]+)\]\s+"  # [Channel Name]
+    r"^" + _TS + r"\s+"  # timestamp
+    r"\[(?P<channel>[^\]]+)\]\s+"  # [Channel Name]
     r"\|Hplayer:[^|]*\|h"  # |Hplayer:...|h wrapper
-    r"\[([^-\]|]+)"  # [Author
-    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\[(?P<author>[^-\]|]+)"  # [Author
+    r"(?:-(?P<server>[^\]|]+))?\]"  # -Server]
     r"\|h"  # closing |h
     r":\s+"  # : separator
-    r"(.+)$"  # message text
+    r"(?P<text>.+)$"  # message text
 )
 
 # Whisper TO: timestamp  To [Author-Server]: text
 _RE_WHISPER_TO = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"To\s+\[([^-\]]+)"  # To [Author
-    r"(?:-([^\]]+))?\]"  # -Server]
+    r"^" + _TS + r"\s+"  # timestamp
+    r"To\s+\[(?P<author>[^-\]]+)"  # To [Author
+    r"(?:-(?P<server>[^\]]+))?\]"  # -Server]
     r":\s+"  # :
-    r"(.+)$"  # text
+    r"(?P<text>.+)$"  # text
 )
 
 # Whisper FROM: timestamp  [Author-Server] whispers: text
 # Also handles |Hplayer:...|h[Author]|h wrapper from AddMessage
 _RE_WHISPER_FROM = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"^" + _TS + r"\s+"  # timestamp
     r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
-    r"\[([^-\]|]+)"  # [Author (stop at - ] or |)
-    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\[(?P<author>[^-\]|]+)"  # [Author (stop at - ] or |)
+    r"(?:-(?P<server>[^\]|]+))?\]"  # -Server]
     r"(?:\|h)?\s+"  # optional |h close
     r"(?:whispers|шепчет):\s+"  # whispers: / шепчет:
-    r"(.+)$"  # text
+    r"(?P<text>.+)$"  # text
 )
 
 # Whisper TO (Russian): timestamp  Кому [Author-Server]: text
 _RE_WHISPER_TO_RU = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"Кому\s+\[([^-\]]+)"  # Кому [Author
-    r"(?:-([^\]]+))?\]"  # -Server]
+    r"^" + _TS + r"\s+"  # timestamp
+    r"Кому\s+\[(?P<author>[^-\]]+)"  # Кому [Author
+    r"(?:-(?P<server>[^\]]+))?\]"  # -Server]
     r":\s+"  # :
-    r"(.+)$"  # text
+    r"(?P<text>.+)$"  # text
 )
 
 # Say/Yell from AddMessage hook (no [Channel] prefix, uses verb):
@@ -170,44 +173,44 @@ _SAY_YELL_VERB_MAP: dict[str, Channel] = {
 }
 # Player format: |Hplayer:...|h[Name-Server]|h verb: text
 _RE_SAY_YELL_PLAYER = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"^" + _TS + r"\s+"  # timestamp
     r"\|Hplayer:[^|]*\|h"  # |Hplayer:...|h
-    r"\[([^-\]|]+)"  # [Author
-    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\[(?P<author>[^-\]|]+)"  # [Author
+    r"(?:-(?P<server>[^\]|]+))?\]"  # -Server]
     r"\|h\s+"  # |h + space
-    r"(says|yells|говорит|кричит):\s+"  # verb
-    r"(.+)$"  # text
+    r"(?P<verb>says|yells|говорит|кричит):\s+"  # verb
+    r"(?P<text>.+)$"  # text
 )
 # NPC/plain format: Name verb: text (name = everything before verb)
 _RE_SAY_YELL_PLAIN = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
-    r"(.+?)\s+"  # Author (non-greedy, may have spaces)
-    r"(says|yells|говорит|кричит):\s+"  # verb
-    r"(.+)$"  # text
+    r"^" + _TS + r"\s+"  # timestamp
+    r"(?P<author>.+?)\s+"  # Author (non-greedy, may have spaces)
+    r"(?P<verb>says|yells|говорит|кричит):\s+"  # verb
+    r"(?P<text>.+)$"  # text
 )
 
 # Whisper TO (RU AddMessage): "Вы шепчете [Name]: text"
 # Also handles |3-2(|Kj4|k) BattleNet format
 _RE_WHISPER_TO_ADDMSG = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"^" + _TS + r"\s+"  # timestamp
     r"(?:Вы шепчете|You whisper)\s+"  # RU/EN prefix
     r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
-    r"\[?([^-\]|:]+)"  # Author (flexible)
-    r"(?:-([^\]|:]+))?\]?"  # -Server (optional)
+    r"\[?(?P<author>[^-\]|:]+)"  # Author (flexible)
+    r"(?:-(?P<server>[^\]|:]+))?\]?"  # -Server (optional)
     r"(?:\|h)?:\s+"  # optional |h, then : separator
-    r"(.+)$"  # text
+    r"(?P<text>.+)$"  # text
 )
 
 # Whisper FROM (RU AddMessage): "[Fury] шепчет: text"
 # Also: |Hplayer:...|h[Name]|h шепчет: text
 _RE_WHISPER_FROM_ADDMSG = re.compile(
-    r"^(\d+/\d+\s+\d+:\d+:\d+\.\d+)\s+"  # timestamp
+    r"^" + _TS + r"\s+"  # timestamp
     r"(?:\|Hplayer:[^|]*\|h)?"  # optional |Hplayer:...|h
-    r"\[([^-\]|]+)"  # [Author
-    r"(?:-([^\]|]+))?\]"  # -Server]
+    r"\[(?P<author>[^-\]|]+)"  # [Author
+    r"(?:-(?P<server>[^\]|]+))?\]"  # -Server]
     r"(?:\|h)?\s+"  # optional |h
     r"(?:whispers|шепчет):\s+"  # verb
-    r"(.+)$"  # text
+    r"(?P<text>.+)$"  # text
 )
 
 # System message patterns to filter out
@@ -229,15 +232,15 @@ def _strip_wow_markup(text: str) -> str:
 
 # Full WoW hyperlink pattern: |cXXXXXXXX|Htype:data|h[Display Name]|h|r
 # Also matches color-stripped variant: |Htype:data|h[Display Name]|h
-_RE_WOW_LINK = re.compile(
+RE_WOW_LINK = re.compile(
     r"(?:\|c[0-9a-fA-F]{8})?\|H[^|]+\|h\[[^\]]*\]\|h(?:\|r)?"
 )
 
 
 def _is_item_link_only(raw_text: str) -> bool:
     """Return True if raw text consists entirely of WoW item/spell links (no real words)."""
-    stripped = _RE_WOW_LINK.sub("", raw_text).strip()
-    return len(stripped) == 0 and _RE_WOW_LINK.search(raw_text) is not None
+    stripped = RE_WOW_LINK.sub("", raw_text).strip()
+    return len(stripped) == 0 and RE_WOW_LINK.search(raw_text) is not None
 
 
 def _clean_text(raw_text: str) -> str | None:
@@ -269,141 +272,141 @@ def parse_line(line: str) -> ChatMessage | None:
     for regex in (_RE_WHISPER_TO, _RE_WHISPER_TO_RU):
         m = regex.match(line)
         if m:
-            text = _clean_text(m.group(4))
+            text = _clean_text(m.group("text"))
             if text is None:
                 return None
             return ChatMessage(
-                timestamp=m.group(1),
+                timestamp=m.group("timestamp"),
                 channel=Channel.WHISPER_TO,
-                author=m.group(2),
-                server=m.group(3) or "",
+                author=m.group("author"),
+                server=m.group("server") or "",
                 text=text,
             )
 
     # Try whisper FROM (English: "whispers:", Russian: "шепчет:")
     m = _RE_WHISPER_FROM.match(line)
     if m:
-        text = _clean_text(m.group(4))
+        text = _clean_text(m.group("text"))
         if text is None:
             return None
         return ChatMessage(
-            timestamp=m.group(1),
+            timestamp=m.group("timestamp"),
             channel=Channel.WHISPER_FROM,
-            author=m.group(2),
-            server=m.group(3) or "",
+            author=m.group("author"),
+            server=m.group("server") or "",
             text=text,
         )
 
     # Try non-EN hyperlink format: |Hchannel:TYPE|h[Name]|h Author: text
     m = _RE_HCHANNEL_MSG.match(line)
     if m:
-        channel_id = m.group(2)
+        channel_id = m.group("channel")
         channel = _HCHANNEL_MAP.get(channel_id)
         if channel is None:
             return None
 
-        text = _clean_text(m.group(5))
+        text = _clean_text(m.group("text"))
         if text is None:
             return None
         return ChatMessage(
-            timestamp=m.group(1),
+            timestamp=m.group("timestamp"),
             channel=channel,
-            author=m.group(3),
-            server=m.group(4) or "",
+            author=m.group("author"),
+            server=m.group("server") or "",
             text=text,
         )
 
     # Try bracket channel + player hyperlink: [Channel] |Hplayer:...|h[Name]|h: text
     m = _RE_BRACKET_HPLAYER_MSG.match(line)
     if m:
-        channel_name = m.group(2)
+        channel_name = m.group("channel")
         channel = _CHANNEL_MAP.get(channel_name)
         if channel is not None:
-            text = _clean_text(m.group(5))
+            text = _clean_text(m.group("text"))
             if text is not None:
                 return ChatMessage(
-                    timestamp=m.group(1),
+                    timestamp=m.group("timestamp"),
                     channel=channel,
-                    author=m.group(3),
-                    server=m.group(4) or "",
+                    author=m.group("author"),
+                    server=m.group("server") or "",
                     text=text,
                 )
 
     # Try standard EN channel message: [Channel] Author: text
     m = _RE_CHANNEL_MSG.match(line)
     if m:
-        channel_name = m.group(2)
+        channel_name = m.group("channel")
         channel = _CHANNEL_MAP.get(channel_name)
         if channel is None:
             return None  # Unknown channel (e.g., numbered channels, trade, etc.)
 
-        text = _clean_text(m.group(5))
+        text = _clean_text(m.group("text"))
         if text is None:
             return None
         return ChatMessage(
-            timestamp=m.group(1),
+            timestamp=m.group("timestamp"),
             channel=channel,
-            author=m.group(3),
-            server=m.group(4) or "",
+            author=m.group("author"),
+            server=m.group("server") or "",
             text=text,
         )
 
     # Try AddMessage whisper formats (Вы шепчете / You whisper)
     m = _RE_WHISPER_TO_ADDMSG.match(line)
     if m:
-        text = _clean_text(m.group(4))
+        text = _clean_text(m.group("text"))
         if text is None:
             return None
         return ChatMessage(
-            timestamp=m.group(1),
+            timestamp=m.group("timestamp"),
             channel=Channel.WHISPER_TO,
-            author=m.group(2),
-            server=m.group(3) or "",
+            author=m.group("author"),
+            server=m.group("server") or "",
             text=text,
         )
 
     m = _RE_WHISPER_FROM_ADDMSG.match(line)
     if m:
-        text = _clean_text(m.group(4))
+        text = _clean_text(m.group("text"))
         if text is None:
             return None
         return ChatMessage(
-            timestamp=m.group(1),
+            timestamp=m.group("timestamp"),
             channel=Channel.WHISPER_FROM,
-            author=m.group(2),
-            server=m.group(3) or "",
+            author=m.group("author"),
+            server=m.group("server") or "",
             text=text,
         )
 
     # Try Say/Yell player format: |Hplayer:...|h[Name]|h говорит: text
     m = _RE_SAY_YELL_PLAYER.match(line)
     if m:
-        verb = m.group(4).lower()
+        verb = m.group("verb").lower()
         channel = _SAY_YELL_VERB_MAP.get(verb)
         if channel:
-            text = _clean_text(m.group(5))
+            text = _clean_text(m.group("text"))
             if text is not None:
                 return ChatMessage(
-                    timestamp=m.group(1),
+                    timestamp=m.group("timestamp"),
                     channel=channel,
-                    author=m.group(2),
-                    server=m.group(3) or "",
+                    author=m.group("author"),
+                    server=m.group("server") or "",
                     text=text,
                 )
 
     # Try Say/Yell plain format: NPC Name говорит: text
     m = _RE_SAY_YELL_PLAIN.match(line)
     if m:
-        verb = m.group(3).lower()
+        verb = m.group("verb").lower()
         channel = _SAY_YELL_VERB_MAP.get(verb)
         if channel:
-            text = _clean_text(m.group(4))
+            text = _clean_text(m.group("text"))
             if text is not None:
                 # Author may have spaces (NPC names); no server
                 return ChatMessage(
-                    timestamp=m.group(1),
+                    timestamp=m.group("timestamp"),
                     channel=channel,
-                    author=m.group(2).strip(),
+                    author=m.group("author").strip(),
                     server="",
                     text=text,
                 )
