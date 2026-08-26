@@ -399,6 +399,7 @@ class SettingsWindowGtk:
             setattr(c, attr, cb.get_active())
         c.own_language = self._dd_value(self._own)
         c.target_language = self._dd_value(self._target)
+        language_changed = self._dd_value(self._ui) != tr.get_language()
         c.ui_language = self._dd_value(self._ui)
         # Applied immediately, the way the Qt dialog does it: a language you
         # picked and saved that does not take hold reads as the setting being
@@ -441,3 +442,11 @@ class SettingsWindowGtk:
 
         if self._on_saved is not None:
             self._on_saved(c)
+
+        # Every label in here was built in the old language and a GTK widget
+        # keeps the string it was built with, so a language change has to close
+        # the window: the next opening is the rebuild. Any other save leaves it
+        # open — closing on all of them would mean the "Saved" just written two
+        # lines up is never on screen long enough to read.
+        if language_changed:
+            self._win.close()

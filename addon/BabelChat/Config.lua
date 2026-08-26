@@ -68,7 +68,7 @@ function addonTable.CreateConfigUI()
 
     local version = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     version:SetPoint("TOP", logo, "BOTTOM", 0, -2)
-    version:SetText("v" .. (C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "3.4.0"))
+    version:SetText("v" .. (C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "3.4.1"))
 
     -- ════════════════════════════════════
     -- SECTION 1: GENERAL

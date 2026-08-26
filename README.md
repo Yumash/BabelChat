@@ -277,7 +277,7 @@ WoW, so an addon-only setup has no egress at all.
 | Cache              | SQLite + LRU                                                               |
 | Build              | PyInstaller → .exe (Windows) / AppImage, .deb, .rpm (Linux)                |
 | Addon              | Lua 5.1, WoW API                                                           |
-| Tests              | 998 tests (pytest)                                                         |
+| Tests              | 1146 tests (pytest)                                                         |
 
 ## Development
 

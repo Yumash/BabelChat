@@ -138,6 +138,17 @@ class ChannelFilterBar(QWidget):
 
         layout.addStretch()
 
+    def apply_language(self) -> None:
+        """Relabel the tabs after the interface language changed.
+
+        From the same shared declaration they were built from, so a tab added
+        there is relabelled here without this method being touched.
+        """
+        for name, label_key in FILTER_TABS:
+            button = self._buttons.get(name)
+            if button is not None:
+                button.setText(tr(label_key))
+
     def _on_click(self, name: str) -> None:
         self._active = name
         for btn_name, btn in self._buttons.items():

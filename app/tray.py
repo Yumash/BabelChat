@@ -85,22 +85,40 @@ class TrayIcon(QSystemTrayIcon):
 
         self._menu.addSeparator()
 
-        settings_action = QAction(tr("tray.settings"))
-        settings_action.triggered.connect(self.settings_requested)
-        self._menu.addAction(settings_action)
+        # Kept on the icon, not local: a menu built once holds the strings it
+        # was built with, and the tray is the one window a user cannot close
+        # and reopen to get the new language.
+        self._settings_action = QAction(tr("tray.settings"))
+        self._settings_action.triggered.connect(self.settings_requested)
+        self._menu.addAction(self._settings_action)
 
-        about_action = QAction(tr("tray.about"))
-        about_action.triggered.connect(self.about_requested)
-        self._menu.addAction(about_action)
+        self._about_action = QAction(tr("tray.about"))
+        self._about_action.triggered.connect(self.about_requested)
+        self._menu.addAction(self._about_action)
 
         self._menu.addSeparator()
 
-        quit_action = QAction(tr("tray.quit"))
-        quit_action.triggered.connect(self.quit_requested)
-        self._menu.addAction(quit_action)
+        self._quit_action = QAction(tr("tray.quit"))
+        self._quit_action.triggered.connect(self.quit_requested)
+        self._menu.addAction(self._quit_action)
 
         self.setContextMenu(self._menu)
         self.activated.connect(self._on_activated)
+
+    def apply_language(self) -> None:
+        """Relabel the menu after the interface language changed.
+
+        The first item is written from state rather than from the table alone:
+        it says Hide or Show depending on where the overlay is, and relabelling
+        it unconditionally would offer to hide a window that is already hidden.
+        """
+        self._show_action.setText(
+            tr("tray.hide_overlay") if self._overlay_visible else tr("tray.show_overlay")
+        )
+        self._translate_action.setText(tr("tray.toggle_translation"))
+        self._settings_action.setText(tr("tray.settings"))
+        self._about_action.setText(tr("tray.about"))
+        self._quit_action.setText(tr("tray.quit"))
 
     def _toggle_overlay(self) -> None:
         if self._overlay_visible:

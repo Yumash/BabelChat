@@ -119,12 +119,16 @@ def build(overlay: ChatOverlay) -> None:
     )
 
     settings_btn = QPushButton(tr("overlay.settings"))
+    # Kept on the overlay so a language change can reach it: a Qt widget holds
+    # the string it was built with, and a local goes out of scope here.
+    overlay._settings_btn = settings_btn
     settings_btn.setFixedHeight(20)
     settings_btn.setStyleSheet(_TB_BTN)
     settings_btn.clicked.connect(overlay.settings_requested.emit)
     tb_layout.addWidget(settings_btn)
 
     opacity_label = QLabel(tr("overlay.opacity"))
+    overlay._opacity_label = opacity_label
     opacity_label.setStyleSheet("color: #999; font-size: 10px;")
     tb_layout.addWidget(opacity_label)
 

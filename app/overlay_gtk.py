@@ -260,6 +260,7 @@ class ChatOverlayGtk:
         self._list: Gtk.Box | None = None
         self._scroller: Gtk.ScrolledWindow | None = None
         self._reply_entry: Gtk.Entry | None = None
+        self._grip: Gtk.DrawingArea | None = None
         self._reply_status: Gtk.Label | None = None
 
         # Callbacks wired by main (so this module stays UI-only).
@@ -721,6 +722,7 @@ class ChatOverlayGtk:
         grip.set_content_height(16)
         grip.add_css_class("bc-grip")
         grip.set_tooltip_text(tr("overlay.resize_hint"))
+        self._grip = grip
         grip.set_cursor_from_name("nwse-resize")
         grip.set_halign(Gtk.Align.END)
         grip.set_valign(Gtk.Align.END)
@@ -870,6 +872,26 @@ class ChatOverlayGtk:
         """Set the TR toggle state (fires the normal toggled handler)."""
         if getattr(self, "_translate_toggle", None) is not None:
             self._translate_toggle.set_active(enabled)
+
+    def apply_language(self) -> None:
+        """Refresh all persistent overlay UI text after a language change."""
+        if self._win is None:
+            return
+        self._translate_toggle.set_label(
+            tr("overlay.badge.on") if self._translate_toggle.get_active() else tr("overlay.badge.off")
+        )
+        self._translate_toggle.set_tooltip_text(tr("overlay.translate_toggle"))
+        self._reply_entry.set_placeholder_text(tr("overlay.reply.placeholder"))
+        self._reply_lang_dd.set_tooltip_text(tr("overlay.reply.into"))
+        self._copy_btn.set_label(tr("overlay.reply.copy"))
+        self._copy_btn.set_tooltip_text(tr("overlay.reply.copy"))
+        if self._grip is not None:
+            self._grip.set_tooltip_text(tr("overlay.resize_hint"))
+        self._update_filter_labels()
+
+    def _update_filter_labels(self) -> None:
+        for name, btn in getattr(self, "_filter_buttons", {}).items():
+            btn.set_label(tr(_FILTER_LABELS[name]))
 
     def apply_appearance(self) -> None:
         """(Re)build the overlay CSS from current config — opacity, font size.

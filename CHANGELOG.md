@@ -8,6 +8,18 @@ ship under the same number.
 
 ---
 
+## [3.4.1] — 2026-08-26
+
+### Fixed
+
+- **The interface opened in Russian whatever language you had chosen.** On Linux the GTK entry point never applied the saved language at all, so the control in Settings had no effect on anything; and on a first run, before there is a choice to apply, both frontends fell back to the Russian default — so a new player anywhere in the world read the setup wizard, the first thing they see, in a language they may not have. A saved choice is honoured now, and a first run takes its language from the operating system instead, falling back to Russian when the system names one the interface does not have. Windows is asked which language its *interface* is in, which is a different setting there from the one dates and numbers are formatted by, and the one that actually answers the question.
+- **Changing the language left every open window in the old one.** A widget keeps the string it was built with, so the new language reached nothing already on screen and took hold only at the next launch — which reads as a control that does nothing. The overlay relabels itself now, on both platforms, and on Windows so does the separate window the clipboard hotkey opens — created on demand and then kept, so it outlived the setting that was changed after it.
+- **The tray menu was the worst of those, because you cannot close and reopen it.** It is built once at startup, and on Linux it was never translated at all: five English items above a Russian overlay, whatever you had picked. It is translated now and follows a language change on both platforms — and its first entry is written from where the overlay actually is, so it no longer offers to hide a window that is already hidden.
+- **The setup wizard forgot what you had typed when you changed its language.** Showing it in a new language means building its pages again, and neither wizard kept what was already in the fields — an API key pasted on the second page, the WoW folder browsed for on the third, both silently gone because of the dropdown on the first. They carry across now.
+- **Saving a new language leaves the settings window rebuilt rather than stale.** Reopening it is the rebuild, so that one save closes it; any other save leaves it where it is, with its confirmation where you can read it.
+
+---
+
 ## [3.4.0] — 2026-08-23
 
 ### Added

@@ -13,6 +13,7 @@ Usage (from main_gtk):
 
 from __future__ import annotations
 
+import contextlib
 import threading  # noqa: E402
 
 import gi  # noqa: E402
@@ -21,7 +22,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from app.config import AppConfig, detect_wow_path  # noqa: E402
-from app.i18n import tr  # noqa: E402
+from app.i18n import UI_LANGUAGES, tr  # noqa: E402
 from app.translators import all_providers  # noqa: E402
 from app.translators import get as provider_get  # noqa: E402
 
@@ -38,12 +39,15 @@ _LANGS = [
     ("KO", "한국어"),
     ("JA", "日本語"),
 ]
-_UI_LANGS = [("EN", "English"), ("RU", "Русский"), ("ES", "Español")]
+#: From the one table, not a fourth copy of it: a translation added there and
+#: missed here would leave the dropdown falling back to its first entry, and
+#: _finish would persist that over the language the guess had got right.
+_UI_LANGS = list(UI_LANGUAGES.items())
 
 
 class _WizardWindow(Gtk.ApplicationWindow):
     def __init__(self, app: Gtk.Application, config: AppConfig, result: dict) -> None:
-        super().__init__(application=app, title="BabelChat Setup")
+        super().__init__(application=app, title=tr("wizard.title"))
         self._config = config
         self._result = result  # {"config": AppConfig|None}
         self.set_default_size(520, 480)
@@ -51,10 +55,7 @@ class _WizardWindow(Gtk.ApplicationWindow):
         self._stack = Gtk.Stack()
         self._stack.set_vexpand(True)
         self._pages: list[Gtk.Widget] = []
-        for builder in (self._page_welcome, self._page_api, self._page_wow, self._page_langs, self._page_ready):
-            page = builder()
-            self._pages.append(page)
-            self._stack.add_child(page)
+        self._build_pages()
         self._index = 0
 
         # Nav bar
@@ -79,6 +80,75 @@ class _WizardWindow(Gtk.ApplicationWindow):
         self.set_child(root)
         self._sync_nav()
 
+    # ── page (re)building ────────────────────────────────────────────────
+    def _build_pages(self) -> None:
+        """(Re)build all pages from scratch so tr() text reflects the current
+        language. Called on init and again whenever the interface-language
+        dropdown changes, so the wizard updates live rather than only on the
+        NEXT run."""
+        snapshot = self._snapshot_fields() if self._pages else None
+
+        for page in self._pages:
+            self._stack.remove(page)
+        self._pages = []
+
+        for builder in (self._page_welcome, self._page_api, self._page_wow,
+                        self._page_langs, self._page_ready):
+            page = builder()
+            self._pages.append(page)
+            self._stack.add_child(page)
+
+        if snapshot is not None:
+            self._restore_fields(snapshot)
+            self._stack.set_visible_child(self._pages[self._index])
+
+    def _snapshot_fields(self) -> dict:
+        """Capture whatever the user has already entered, so switching the
+        interface language mid-wizard (a rebuild) doesn't lose it."""
+        snap: dict = {
+            "ui_lang": self._dd_code(self._ui_lang),
+            "priority": self._dd_code(self._priority),
+            "wow_path": self._wow_entry.get_text(),
+            "own_lang": self._dd_code(self._own_lang),
+            "target_lang": self._dd_code(self._target_lang),
+            "providers": {
+                pid: {key: entry.get_text() for key, entry in fields.items()}
+                for pid, fields in self._provider_entries.items()
+            },
+        }
+        return snap
+
+    def _restore_fields(self, snap: dict) -> None:
+        self._set_dd_code(self._ui_lang, snap["ui_lang"])
+        self._set_dd_code(self._priority, snap["priority"])
+        self._wow_entry.set_text(snap["wow_path"])
+        self._set_dd_code(self._own_lang, snap["own_lang"])
+        self._set_dd_code(self._target_lang, snap["target_lang"])
+        for pid, values in snap["providers"].items():
+            fields = self._provider_entries.get(pid, {})
+            for key, text in values.items():
+                entry = fields.get(key)
+                if entry is not None:
+                    entry.set_text(text)
+
+    @staticmethod
+    def _set_dd_code(dd: Gtk.DropDown, code: str) -> None:
+        codes = getattr(dd, "_codes", [])
+        with contextlib.suppress(ValueError):
+            dd.set_selected(codes.index(code))
+
+    def _on_ui_lang_changed(self, dd: Gtk.DropDown, _param: object) -> None:
+        code = self._dd_code(dd)
+        if code == tr.get_language():
+            return
+        tr.set_language(code)
+        self._config.ui_language = code
+        # Rebuild so every page (including this one) re-renders in the new
+        # language immediately, instead of only taking effect next launch.
+        self._build_pages()
+        self._sync_nav()
+        self.set_title(tr("wizard.title"))
+
     # ── navigation ────────────────────────────────────────────────────────
     def _go(self, delta: int) -> None:
         self._index = max(0, min(len(self._pages) - 1, self._index + delta))
@@ -88,6 +158,7 @@ class _WizardWindow(Gtk.ApplicationWindow):
     def _sync_nav(self) -> None:
         last = self._index == len(self._pages) - 1
         self._back.set_sensitive(self._index > 0)
+        self._back.set_label(tr("wizard.back"))
         self._next.set_label(tr("wizard.start") if last else tr("wizard.next"))
         # Same step names the Qt wizard uses, from the one string that holds
         # them; the key wants a name as well as the numbers.
@@ -146,7 +217,14 @@ class _WizardWindow(Gtk.ApplicationWindow):
         )
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row.append(self._body(tr("wizard.welcome.ui_lang")))
-        self._ui_lang = self._dropdown(_UI_LANGS, self._config.ui_language or "EN")
+        # Source the selection from tr (what's actually on screen right now),
+        # not self._config.ui_language directly — before anything is saved,
+        # config.ui_language is just its raw default and can disagree with
+        # the language the page text is actually rendered in (e.g. the
+        # locale-guessed language on first open), showing a dropdown value
+        # that doesn't match what the user is looking at.
+        self._ui_lang = self._dropdown(_UI_LANGS, tr.get_language())
+        self._ui_lang.connect("notify::selected", self._on_ui_lang_changed)
         row.append(self._ui_lang)
         box.append(row)
         return box
@@ -295,7 +373,12 @@ class _WizardWindow(Gtk.ApplicationWindow):
             GLib.idle_add(done, valid, msg)
 
         def done(valid: bool, msg: str) -> bool:
-            btn.set_sensitive(True)
+            # Switching the interface language rebuilds every page, so the
+            # button this validation started from may no longer be in the
+            # window by the time the worker answers. Its replacement is
+            # sensitive already; poking the orphan only earns GTK criticals.
+            if btn.get_parent() is not None:
+                btn.set_sensitive(True)
             if valid:
                 extra = f" — {msg}" if msg and msg != "valid" else ""
                 self._api_status.set_markup(

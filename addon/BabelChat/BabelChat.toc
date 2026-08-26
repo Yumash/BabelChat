@@ -5,7 +5,7 @@
 ## Notes-esES: |cFF33CCFFTraducción de chat en tiempo real — diccionario integrado + overlay con app acompañante.|r
 ## Notes-esMX: |cFF33CCFFTraducción de chat en tiempo real — diccionario integrado + overlay con app acompañante.|r
 ## Author: Andrey Yumashev, Pirson
-## Version: 3.4.0
+## Version: 3.4.1
 ## X-License: MIT
 ## X-Website: https://github.com/Yumash/BabelChat
 

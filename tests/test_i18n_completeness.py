@@ -337,10 +337,23 @@ def test_every_entry_point_applies_the_configured_ui_language(entry_point):
     `gi` is not installed on Windows or on CI, so `main_gtk` cannot be imported
     here. The call is asserted in the source instead — a weaker check than
     running it, and the reason it is written down.
-    """
-    text = (APP.parent / entry_point).read_text(encoding="utf-8")
 
-    calls = [line.strip() for line in text.splitlines() if "tr.set_language(" in line]
+    Read as whole statements rather than as lines: the argument is now long
+    enough to wrap, and a line scan would report an entry point that does this
+    correctly as one that never does it at all.
+    """
+    import ast
+
+    text = (APP.parent / entry_point).read_text(encoding="utf-8")
+    tree = ast.parse(text)
+
+    calls = [
+        ast.get_source_segment(text, node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "set_language"
+    ]
 
     assert calls, f"{entry_point} never applies the configured language"
     assert any("ui_language" in call for call in calls), calls

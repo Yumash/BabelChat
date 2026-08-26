@@ -60,5 +60,5 @@ jobs:
       # tests into skips, and skips still count here.
       - name: Guard test count
         env:
-          MIN_TESTS: "1015"
+          MIN_TESTS: "1146"
         run: python .github/scripts/check_test_count.py report.xml ${{ env.MIN_TESTS }}

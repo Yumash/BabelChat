@@ -19,19 +19,17 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("PyQt6", reason="main imports the Qt frontend")
-
-from app import main as app_main  # noqa: E402
+from app import single_instance
 
 
 @pytest.fixture
 def lock(tmp_path, monkeypatch):
     """Point the module at a lock file of our own and count the kills."""
     path = tmp_path / "babelchat.lock"
-    monkeypatch.setattr(app_main, "_LOCK_FILE", str(path))
+    monkeypatch.setattr(single_instance, "_LOCK_FILE", str(path))
 
     killed: list[int] = []
-    monkeypatch.setattr(app_main, "_terminate", lambda pid: killed.append(pid))
+    monkeypatch.setattr(single_instance, "_terminate", lambda pid: killed.append(pid))
 
     return SimpleNamespace(path=path, killed=killed)
 
@@ -39,9 +37,9 @@ def lock(tmp_path, monkeypatch):
 def test_a_reused_pid_is_not_killed(lock, monkeypatch):
     """The whole point. Same number, different process — leave it alone."""
     lock.path.write_text("4242\nstarted-yesterday\n", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: "started-today")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: "started-today")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == [], "terminated a process that only shares the number"
 
@@ -49,9 +47,9 @@ def test_a_reused_pid_is_not_killed(lock, monkeypatch):
 def test_the_previous_copy_is_killed(lock, monkeypatch):
     """And the feature still works: same number, same process."""
     lock.path.write_text("4242\nstarted-yesterday\n", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: "started-yesterday")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: "started-yesterday")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == [4242]
 
@@ -61,9 +59,9 @@ def test_an_unknown_stamp_kills_nothing(lock, monkeypatch):
     query failed for some other reason. Both are 'I do not know', and killing on
     'I do not know' is what this test exists to prevent."""
     lock.path.write_text("4242\nstarted-yesterday\n", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: None)
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: None)
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == []
 
@@ -73,9 +71,9 @@ def test_a_lock_from_an_older_version_kills_nothing(lock, monkeypatch):
     There is nothing to compare against, so the old copy is left running and the
     user closes it by hand. Nobody's unrelated process dies for the upgrade."""
     lock.path.write_text("4242", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: "started-today")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: "started-today")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == []
 
@@ -86,42 +84,42 @@ def test_an_empty_stamp_never_matches_an_old_lock(lock, monkeypatch):
     bare PID again — the exact bug, reintroduced by a plausible edit somewhere
     else entirely."""
     lock.path.write_text("4242\n\n", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: "")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: "")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == []
 
 
 def test_a_damaged_lock_does_not_stop_the_app(lock, monkeypatch):
     lock.path.write_text("not a pid at all", encoding="utf-8")
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: "started-today")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: "started-today")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     assert lock.killed == []
-    assert lock.path.read_text(encoding="utf-8").splitlines()[0] == str(app_main.os.getpid())
+    assert lock.path.read_text(encoding="utf-8").splitlines()[0] == str(single_instance.os.getpid())
 
 
 def test_the_lock_records_this_process(lock, monkeypatch):
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: f"stamp-of-{pid}")
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: f"stamp-of-{pid}")
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
     pid, stamp = lock.path.read_text(encoding="utf-8").splitlines()[:2]
-    assert pid == str(app_main.os.getpid())
-    assert stamp == f"stamp-of-{app_main.os.getpid()}"
+    assert pid == str(single_instance.os.getpid())
+    assert stamp == f"stamp-of-{single_instance.os.getpid()}"
 
 
 def test_the_lock_is_written_even_with_no_stamp_available(lock, monkeypatch):
     """A platform we cannot query still gets single-instance behaviour on the
     next run — it just never kills anything. Writing no lock at all would leave
     stale files around and change nothing for the better."""
-    monkeypatch.setattr(app_main, "_start_stamp", lambda pid: None)
+    monkeypatch.setattr(single_instance, "_start_stamp", lambda pid: None)
 
-    app_main._ensure_single_instance()
+    single_instance._ensure_single_instance()
 
-    assert lock.path.read_text(encoding="utf-8").splitlines()[0] == str(app_main.os.getpid())
+    assert lock.path.read_text(encoding="utf-8").splitlines()[0] == str(single_instance.os.getpid())
 
 
 # ── the stamp itself, against the real operating system ──────────────────────
@@ -131,7 +129,7 @@ def test_this_process_has_a_stamp():
     """A test double is only worth something if the real thing behaves the same
     way. Windows and Linux are both covered by the implementation; anywhere else
     the function is allowed to say it does not know."""
-    stamp = app_main._start_stamp(app_main.os.getpid())
+    stamp = single_instance._start_stamp(single_instance.os.getpid())
 
     if sys.platform in ("win32", "linux"):
         assert stamp, f"no start stamp for our own process on {sys.platform}"
@@ -141,7 +139,7 @@ def test_this_process_has_a_stamp():
 
 def test_a_pid_that_cannot_exist_has_no_stamp():
     """PIDs are bounded; this one is past the end on both platforms."""
-    assert app_main._start_stamp(0x7FFFFFFF) is None
+    assert single_instance._start_stamp(0x7FFFFFFF) is None
 
 
 # ── /proc parsing, testable where there is no /proc ──────────────────────────
@@ -156,7 +154,7 @@ STAT = (
 
 
 def test_the_start_time_is_read_from_the_documented_field():
-    assert app_main._linux_start_time(STAT) == "8654321"
+    assert single_instance._linux_start_time(STAT) == "8654321"
 
 
 def test_a_command_name_full_of_spaces_and_brackets_does_not_shift_the_field():
@@ -166,13 +164,13 @@ def test_a_command_name_full_of_spaces_and_brackets_does_not_shift_the_field():
     also how a process could choose a name that makes it look like ours."""
     hostile = STAT.replace("(BabelChat)", "(evil ) prog (x) )")
 
-    assert app_main._linux_start_time(hostile) == "8654321"
+    assert single_instance._linux_start_time(hostile) == "8654321"
 
 
 def test_the_stamp_is_stable_across_calls():
     """It is compared between two runs of the program, so a stamp that changed
     between calls would make every previous copy look like a stranger and the
     single-instance behaviour would quietly stop working."""
-    pid = app_main.os.getpid()
+    pid = single_instance.os.getpid()
 
-    assert app_main._start_stamp(pid) == app_main._start_stamp(pid)
+    assert single_instance._start_stamp(pid) == single_instance._start_stamp(pid)

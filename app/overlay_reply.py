@@ -148,6 +148,7 @@ class ReplyDialog(QWidget):
         )
         self._copy_btn.clicked.connect(self._copy_result)
         result_row.addWidget(self._copy_btn)
+
         panel_layout.addLayout(result_row)
 
         self._status = QLabel("")
@@ -156,6 +157,18 @@ class ReplyDialog(QWidget):
         panel_layout.addWidget(self._status)
 
         layout.addWidget(panel)
+
+    def apply_language(self) -> None:
+        """Relabel what this window was built with, after a language change.
+
+        It is created lazily — by the clipboard hotkey, or the first time the
+        reply panel is opened — and then kept, so it outlives the setting that
+        was changed after it. Only the two labels built here: the status line
+        and the output field are written on every action and arrive in the new
+        language by themselves.
+        """
+        self._reply_input.setPlaceholderText(tr("overlay.reply.input_hint"))
+        self._copy_btn.setText(tr("overlay.reply.copy"))
 
     def set_translator(self, translator: TranslatorService, target_lang: str) -> None:
         self._translator = translator

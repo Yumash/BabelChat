@@ -152,6 +152,13 @@ class SetupWizard(QDialog):
         if lang and lang != tr.get_language():
             tr.set_language(lang)
             self._config.ui_language = lang
+            # Everything typed so far goes into the config first. Restarting is
+            # how this wizard changes language, and the new one builds its
+            # fields from the config — so anything not written here is simply
+            # gone: an API key pasted on page two, the WoW path browsed for on
+            # page three. Same two calls _finish makes, for the same reason.
+            self._provider_group.apply_to(self._config)
+            self._config.wow_path = self._wow_path_input.text().strip()
             # Signal main to restart wizard with new language
             self._restart_requested = True
             self.done(2)  # Custom result code: restart

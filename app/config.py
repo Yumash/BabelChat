@@ -152,8 +152,7 @@ class AppConfig:
     @classmethod
     def load(cls, path: str = CONFIG_FILE) -> AppConfig:
         """Load config from JSON file, using defaults for missing fields."""
-        target = Path(path)
-        for try_path in [target, target.with_suffix(".json.bak")]:
+        for try_path in _config_candidates(path):
             try:
                 data = json.loads(try_path.read_text(encoding="utf-8"))
                 _migrate_provider_keys(data, try_path)
@@ -171,6 +170,39 @@ class AppConfig:
                 continue
         logger.warning("No valid config found, using defaults")
         return cls()
+
+
+def _config_candidates(path: str = CONFIG_FILE) -> list[Path]:
+    """Every file `AppConfig.load` will accept a saved config from, in order.
+
+    Declared once so that asking "is there a saved config?" and answering
+    "here is the saved config" cannot come to look at different files.
+    """
+    target = Path(path)
+    return [target, target.with_suffix(".json.bak")]
+
+
+def saved_config_exists(path: str = CONFIG_FILE) -> bool:
+    """True when a config this build can actually read is on disk.
+
+    Deliberately not `os.path.exists(CONFIG_FILE)`, which answers a different
+    question and gets it wrong in both directions. `load` also reads
+    `config.json.bak`, so an absent main file does not mean the user has no
+    saved preferences — and it falls back to defaults on a corrupt one, so a
+    present main file does not mean any were read. Anything deciding whether
+    this is a first run has to ask about the same candidates `load` does.
+
+    Parses rather than stats, for the corrupt case, but does not migrate: the
+    migrations write backups of their own, and running them from a question is
+    not what a question should do.
+    """
+    for candidate in _config_candidates(path):
+        try:
+            json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)

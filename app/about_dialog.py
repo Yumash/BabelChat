@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 
 from app.i18n import tr
 
-VERSION = "3.4.0"
+VERSION = "3.4.1"
 
 ABOUT_STYLESHEET = """
 QDialog {
