@@ -133,7 +133,7 @@ modules, and every module the rest of this document names:
 | Memory buffer, not file watcher | WoW buffers WoWChatLog.txt by volume, and chat is low volume — minutes of delay. Through memory: one poll |
 | Overlay, not in-game UI | WoW Lua sandbox cannot make HTTP requests. An external overlay can call a translation API |
 | Streaming translation | Show original immediately (0ms), translation arrives async (0.5-2s). Perceived latency = 0 |
-| Outgoing via clipboard | ToS compliance — no automation, user manually pastes |
+| Outgoing via clipboard | No automation — the app never sends chat; the user pastes it |
 | Python, with Rust where it counts | The reading is I/O-bound and Python is fine for it; finding the buffer is not, and that part is a Rust cdylib. Python gives PyQt6/GTK4, lingua-py and the provider SDKs |
 | GigaChat first in the chain | Reachability, not quality: no card, no VPN, free for individuals. MyMemory second because it needs no account at all |
 | MIT license | Compatible with Pirson's WoW Translator (MIT), simplest for community |

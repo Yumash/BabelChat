@@ -40,9 +40,13 @@ Want to change something? `/babel config`.
 ## Full-sentence translation (optional)
 
 Grab the companion app from [GitHub](https://github.com/Yumash/BabelChat). It
-reads the addon's chat buffer and shows translations in an overlay. Read-only —
-it never writes to WoW's memory, never injects, never automates. Same approach as
-WeakAuras Companion.
+reads the addon's chat buffer out of the game's memory and shows translations in
+an overlay. It only reads — nothing is written, injected or automated — but
+reading the game's memory is not something Blizzard's EULA permits, and nobody
+outside Blizzard can promise it will never be acted on. The README says exactly
+[what it does to the game and what we can't promise](https://github.com/Yumash/BabelChat#what-it-does-to-the-game-and-what-we-cant-promise);
+read that before you run it. The addon on its own is an ordinary add-on and
+needs none of this.
 
 It needs a translation service. **All four have a free tier**, and you only need
 one:
@@ -193,8 +197,13 @@ BabelChat дописывает серым в той же строке:
 ## Целые фразы, если захочется
 
 Компаньон лежит на [GitHub](https://github.com/Yumash/BabelChat). Он читает
-буфер аддона и показывает перевод в оверлее. Только читает: в память игры ничего
-не пишет, ничего не внедряет, ничего за тебя не делает.
+буфер аддона из памяти игры и показывает перевод в оверлее. Только читает: ничего
+не пишет, не внедряет и не делает за тебя — но чтение памяти игры лицензионное
+соглашение Blizzard не разрешает, и никто снаружи Blizzard не пообещает, что за
+это никогда не накажут. В README точно написано,
+[что компаньон делает с игрой и чего мы не обещаем](https://github.com/Yumash/BabelChat/blob/main/README_ru.md#что-компаньон-делает-с-игрой-и-чего-мы-не-обещаем);
+прочитай это до запуска. Аддон сам по себе — обычный аддон, и ничего из этого ему
+не нужно.
 
 Понадобится сервис перевода, любой один из четырёх. Бесплатный тариф есть у всех:
 

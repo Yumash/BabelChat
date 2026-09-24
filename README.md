@@ -120,7 +120,7 @@ The delay is the provider round-trip — your text travels to their servers, get
 
 WoW's Lua sandbox **cannot make HTTP requests**. The addon can capture chat and show UI, but cannot call a translation API. The companion app bridges this gap by reading the addon's memory buffer from outside the game.
 
-BabelChat only **reads** memory — it never writes, injects, or automates anything. Warden (WoW's anti-cheat) does not flag read-only access.
+BabelChat only **reads**: the game process is opened for reading, and nothing is ever written, injected, hooked or typed. That is a description of the program, not a permission from Blizzard — read [what it does to the game, and what we can't promise](#what-it-does-to-the-game-and-what-we-cant-promise) before you run the companion. The addon on its own is an ordinary UI add-on and needs none of this.
 
 > **Why not just read WoWChatLog.txt?** We tried. WoW buffers the chat log file with a ~4KB write buffer and flushes unpredictably — delays range from 1 to 5+ minutes. Messages arrive in random-order bursts, not in real time. For a translator, that's useless. Our addon writes to a Lua string in memory, and the companion reads it every 250ms — giving us sub-second latency.
 
@@ -225,15 +225,23 @@ Adding a new term is simple. Edit the relevant `addon/BabelChat/Data/*.lua` file
 },
 ```
 
-## Blizzard ToS Compliance
+## What it does to the game, and what we can't promise
 
-| Aspect         | Status                                                                      |
-| -------------- | --------------------------------------------------------------------------- |
-| Memory reading | Read-only. No writing, no injection. Warden does not flag read-only access  |
-| Overlay        | Allowed. Same as Discord Overlay                                            |
-| Addon API      | Standard CHAT\_MSG\_\* hooks. Used by every chat addon                      |
-| No injection   | No DLL injection, no hooking, no writing to WoW memory                      |
-| No automation  | No automated actions. Outgoing translation via manual clipboard paste       |
+The **addon** is an ordinary user-interface add-on: Lua inside the game's sandbox, the standard `CHAT_MSG_*` events, the same add-on policy every chat addon lives under. Everything below is about the optional **companion app**.
+
+| The companion… | Exactly |
+| -------------- | ------- |
+| Opens the game process | For reading only — `PROCESS_VM_READ \| PROCESS_QUERY_INFORMATION`, never write access. The handle is kept between polls and closed when a read fails or the app exits |
+| Reads its memory | One Lua string, the addon's chat buffer, through a pointer the addon parks for it — four times a second. Once the pointer is found, nothing is searched for |
+| Writes to it | Never. No DLL injection, no hooks, no patched functions, no simulated input |
+| Draws the overlay | In its own window above the game. It does not attach to the game's renderer — unlike the Discord or Steam overlays, which inject into it |
+| Sends chat | Never. Your reply goes to the clipboard and you paste it yourself |
+
+None of that is permission. Blizzard's [End User License Agreement](https://www.blizzard.com/en-us/legal/fba4d00f-c7e4-4883-b8b9-1b4500a402ea/blizzard-end-user-license-agreement) prohibits "any unauthorized process or software that intercepts, collects, **reads**, or 'mines' information generated or stored by the Platform" — reading is named, and "read-only" is an engineering fact, not an exception in that clause. Its [Anti-Cheating Agreement](https://www.blizzard.com/en-us/legal/cd5930c0-2784-420c-a23d-1e0d6ff8599b/anti-cheating-agreement) says the anti-cheat checks "which processes have a handle to the Blizzard games 'process'", and that information from those processes "will be used to determine if it is a confirmed hacking, botting or cheating program". The companion holds such a handle for as long as it runs.
+
+Whether Blizzard ever makes that determination about this program, nobody outside Blizzard can say. We know of no account action over BabelChat, and that is all we know — it is not the same as being allowed. **Run the companion at your own risk.** If that is not a risk you want, the addon alone still glosses gaming terms in your chat and asks nothing of the game process.
+
+There is no process-free real-time mode today. When memory reading is unavailable — access denied, no buffer found — the companion falls back to `WoWChatLog.txt`, and messages then arrive minutes late, in bursts: WoW buffers that file and nothing on our side can hurry it. It is a fallback, not a mode to choose. A transport that reads the buffer from screen pixels instead, with no handle to the process at all, is planned for 3.5.0 — [#17](https://github.com/Yumash/BabelChat/issues/17).
 
 ## Privacy — what leaves your machine
 
@@ -263,7 +271,7 @@ WoW, so an addon-only setup has no egress at all.
 - **Reads the game's memory** — no elevation needed on Windows (the scanner asks only for read access to a process you already own); on Linux this needs `ptrace_scope=0`
 - **Linux compositor** — the overlay sits above a fullscreen game only where layer-shell exists. On X11 it falls back to an always-on-top window; on GNOME Wayland neither is available and the app runs in a plain window, which it says on first start
 - **Free-tier limits** — every provider has one (see the table above). When one runs out the chain moves to the next
-- **Outgoing messages** — copy → paste in WoW chat (by design, ToS compliance)
+- **Outgoing messages** — copy → paste in WoW chat yourself. The app never sends chat
 
 ## Tech Stack
 

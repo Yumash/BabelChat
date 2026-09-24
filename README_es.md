@@ -120,7 +120,7 @@ La demora viene del round-trip a los servidores del proveedor — tu texto viaja
 
 El sandbox Lua de WoW **no puede hacer peticiones HTTP**. El addon captura el chat pero no puede llamar a una API de traducción. La app acompañante resuelve esto leyendo el buffer del addon desde la memoria del proceso.
 
-BabelChat solo **lee** memoria — nunca escribe, inyecta ni automatiza nada. Warden (anti-cheat de WoW) no detecta acceso de solo lectura.
+BabelChat solo **lee**: el proceso del juego se abre para lectura, y nunca se escribe, inyecta, engancha ni teclea nada en él. Eso describe el programa, no es un permiso de Blizzard — lee [qué le hace al juego y qué no podemos prometer](#qué-le-hace-al-juego-y-qué-no-podemos-prometer) antes de ejecutar la app. El addon por sí solo es un add-on de interfaz corriente y no necesita nada de esto.
 
 > **¿Por qué no leer WoWChatLog.txt?** Lo intentamos. WoW almacena el log de chat con un buffer de ~4KB y lo vacía de forma impredecible — retrasos de 1 a 5+ minutos. Nuestro addon escribe en una cadena Lua en memoria, y la app la lee cada 250ms — latencia inferior a un segundo.
 
@@ -227,15 +227,23 @@ Edita el archivo `addon/BabelChat/Data/*.lua` correspondiente:
 },
 ```
 
-## Cumplimiento con ToS de Blizzard
+## Qué le hace al juego y qué no podemos prometer
 
-| Aspecto            | Estado                                                           |
-| ------------------ | ---------------------------------------------------------------- |
-| Lectura de memoria | Solo lectura. Sin escritura, sin inyección. Warden no lo detecta |
-| Overlay            | Permitido. Como Discord Overlay                                  |
-| API del addon      | Hooks estándar CHAT\_MSG\_\*. Usado por todos los addons de chat |
-| Sin inyección      | Sin DLL injection, sin hooking, sin escritura en memoria de WoW  |
-| Sin automatización | Traducción saliente via portapapeles (pegado manual Ctrl+V)      |
+El **addon** es un add-on de interfaz corriente: Lua dentro del sandbox del juego, los eventos estándar `CHAT_MSG_*`, la misma política de add-ons bajo la que vive cualquier addon de chat. Todo lo que sigue trata de la **app acompañante**, que es opcional.
+
+| La app… | Exactamente |
+| ------- | ----------- |
+| Abre el proceso del juego | Solo para lectura — `PROCESS_VM_READ \| PROCESS_QUERY_INFORMATION`, nunca acceso de escritura. El handle se conserva entre sondeos y se cierra cuando una lectura falla o la app termina |
+| Lee su memoria | Una cadena Lua, el buffer de chat del addon, a través de un puntero que el addon le deja — cuatro veces por segundo. Encontrado el puntero, no se busca nada más |
+| Escribe en ella | Nunca. Sin DLL injection, sin hooks, sin funciones parcheadas, sin entrada simulada |
+| Dibuja el overlay | En su propia ventana sobre el juego. No se engancha al renderizador del juego — a diferencia de los overlays de Discord o Steam, que se inyectan en él |
+| Envía chat | Nunca. Tu respuesta va al portapapeles y la pegas tú |
+
+Nada de eso es un permiso. El [Acuerdo de licencia de Blizzard](https://www.blizzard.com/en-us/legal/fba4d00f-c7e4-4883-b8b9-1b4500a402ea/blizzard-end-user-license-agreement) prohíbe «any unauthorized process or software that intercepts, collects, **reads**, or 'mines' information generated or stored by the Platform»: leer está nombrado, y «solo lectura» es un hecho de ingeniería, no una excepción de esa cláusula. Su [Anti-Cheating Agreement](https://www.blizzard.com/en-us/legal/cd5930c0-2784-420c-a23d-1e0d6ff8599b/anti-cheating-agreement) dice que el anti-cheat comprueba «which processes have a handle to the Blizzard games 'process'» y que la información sobre esos procesos «will be used to determine if it is a confirmed hacking, botting or cheating program». La app mantiene ese handle mientras se ejecuta.
+
+Si Blizzard llegará a tomar esa determinación sobre este programa, nadie fuera de Blizzard puede decirlo. No conocemos ninguna sanción por BabelChat, y eso es todo lo que sabemos: no es lo mismo que estar permitido. **Ejecuta la app bajo tu propia responsabilidad.** Si ese riesgo no es para ti, el addon por sí solo sigue glosando términos del juego en tu chat y no le pide nada al proceso del juego.
+
+Hoy no existe un modo en tiempo real sin acceso al proceso. Cuando la lectura de memoria no está disponible — acceso denegado, buffer no encontrado — la app recurre a `WoWChatLog.txt`, y entonces los mensajes llegan con minutos de retraso, en ráfagas: WoW almacena ese archivo en buffer y nada de nuestro lado puede acelerarlo. Es un recurso de emergencia, no un modo para elegir. Un transporte que lee el buffer desde los píxeles de la pantalla, sin ningún handle al proceso, está planificado para 3.5.0 — [#17](https://github.com/Yumash/BabelChat/issues/17).
 
 ## Privacidad — qué sale de tu máquina
 
@@ -266,7 +274,7 @@ alguno.
 - **Lee la memoria del proceso** — sin permisos elevados en Windows; `ptrace_scope=0` en Linux
 - **Compositor de Linux** — el overlay se pone por encima de un juego a pantalla completa solo donde existe layer-shell. En X11 recurre a una ventana siempre visible; en GNOME Wayland no hay ninguna de las dos y la app se abre en una ventana normal, cosa que avisa al arrancar
 - **Límites de los planes gratuitos** — todos los proveedores tienen uno (ver la tabla de arriba). Cuando uno se agota, la cadena pasa al siguiente
-- **Mensajes salientes** — copiar → pegar en chat WoW (por diseño, cumplimiento ToS)
+- **Mensajes salientes** — copiar → pegar en chat WoW tú mismo. La app nunca envía chat
 
 ## Tecnologías
 

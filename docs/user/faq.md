@@ -10,7 +10,7 @@ build dropped the request. If you have a shortcut set to "run as administrator"
 from an older version, clear it.
 
 ### Is this safe? Will I get banned?
-BabelChat only **reads** memory — it never writes, injects, or automates anything. Warden (WoW's anti-cheat) does not flag read-only memory access.
+Nobody outside Blizzard can answer that, and we won't pretend to. The companion opens the game process for reading only and never writes, injects or automates — but Blizzard's EULA names *reading* the game's data as prohibited without authorization, and its Anti-Cheating Agreement says processes holding a handle to the game are inspected. We know of no account action over BabelChat; that is not the same as permission. The README section [What it does to the game, and what we can't promise](../../README.md#what-it-does-to-the-game-and-what-we-cant-promise) quotes the clauses. The addon on its own is an ordinary UI add-on and carries none of this — if the risk isn't for you, use it without the companion.
 
 ### Why not just read the chat log file?
 We tried. WoW buffers `WoWChatLog.txt` with a ~4KB write buffer and flushes unpredictably — delays range from 1 to 5+ minutes, messages arrive in random-order bursts. For a real-time translator, that's useless. Our addon writes to a Lua string in memory, and the companion reads it every 250ms — sub-second latency. This approach is unique: WeakAuras Companion reads SavedVariables from disk (needs `/reload`), WarcraftLogs tails the combat log (not available for chat).

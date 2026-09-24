@@ -18,9 +18,11 @@ The language comes from your WoW client, so a Russian client glosses in Russian.
 ## With the companion app
 
 For whole sentences rather than terms, run the free companion app from
-<https://github.com/Yumash/BabelChat>. It reads this addon's chat buffer and
-shows translations in an overlay above WoW — read-only, no injection, no
-automation.
+<https://github.com/Yumash/BabelChat>. It reads this addon's chat buffer out of
+the game's memory and shows translations in an overlay above WoW — reading
+only, no injection, no automation. That describes it; it is not a permission
+from Blizzard. The README there says what it does to the game and what we can't
+promise — read it first. The addon on its own needs none of it.
 
 While the app is running the addon stays quiet, so the same message is not
 answered twice in different words. Turn on "show the gloss even when the app is
